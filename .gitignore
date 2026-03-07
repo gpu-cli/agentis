@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+out/
+
+# Turborepo
+.turbo/
+
+# Next.js
+.next/
+
+# Playwright / test output
+playwright-report/
+test-results/
+
+# Environment
+.env
+.env.local
+
+# OS files
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@multiverse/shared": ["../shared/src"],
+      "@multiverse/shared/*": ["../shared/src/*"],
+      "@multiverse/world-model": ["../world-model/src"],
+      "@multiverse/world-model/*": ["../world-model/src/*"]
+    }
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,143 @@
+{
+  "schema": "universal-events",
+  "schemaVersion": 1,
+  "run": {
+    "id": "run_error_recovery",
+    "source": "claude_code",
+    "createdAt": "2026-02-26T10:15:00.000Z",
+    "inputDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "initialFocusDomainId": "dom_ops",
+    "timeRange": {
+      "start": "2026-02-24T11:00:00.000Z",
+      "end": "2026-02-24T11:03:00.000Z"
+    },
+    "import": {
+      "inputPaths": [
+        "/workspace/.claude/projects/ops/session-200.jsonl"
+      ],
+      "redactionPolicy": "default-safe",
+      "exportMode": "shareable"
+    }
+  },
+  "topology": {
+    "world": {
+      "id": "world_workspace",
+      "name": "Workspace"
+    },
+    "domains": [
+      {
+        "id": "dom_ops",
+        "name": "ops",
+        "root": "/workspace/ops",
+        "kind": "git_repo",
+        "confidence": 0.96,
+        "gitRemote": null,
+        "gitBranch": "fix/retry"
+      }
+    ],
+    "districts": [
+      {
+        "id": "dist_scripts",
+        "domainId": "dom_ops",
+        "name": "scripts",
+        "pathPrefix": "scripts/",
+        "confidence": 0.89
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "art_deploy",
+        "domainId": "dom_ops",
+        "districtId": "dist_scripts",
+        "kind": "file",
+        "ref": "scripts/deploy.sh"
+      }
+    ]
+  },
+  "actors": [
+    {
+      "id": "actor_main",
+      "kind": "agent",
+      "name": "agent-main"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_001",
+      "seqGlobal": 1,
+      "actorSeq": 1,
+      "ts": "2026-02-24T11:00:05.000Z",
+      "actorId": "actor_main",
+      "category": "tool_call",
+      "action": "failed",
+      "status": "error",
+      "target": {
+        "kind": "tool",
+        "name": "Bash"
+      },
+      "context": {
+        "domainId": "dom_ops",
+        "exitCode": 1
+      },
+      "dedupeKey": "ue:sha1:error001",
+      "redacted": false
+    },
+    {
+      "id": "evt_002",
+      "seqGlobal": 2,
+      "actorSeq": 2,
+      "ts": "2026-02-24T11:01:10.000Z",
+      "actorId": "actor_main",
+      "category": "tool_call",
+      "action": "completed",
+      "status": "ok",
+      "target": {
+        "kind": "tool",
+        "name": "Bash"
+      },
+      "context": {
+        "domainId": "dom_ops",
+        "exitCode": 0
+      },
+      "dedupeKey": "ue:sha1:error002",
+      "redacted": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "int_001",
+      "type": "resolve",
+      "fromActorId": "actor_main",
+      "toActorId": "actor_main",
+      "eventId": "evt_002",
+      "reason": "Retry resolved prior command failure"
+    }
+  ],
+  "issues": [
+    {
+      "id": "iss_001",
+      "severity": "error",
+      "status": "resolved",
+      "summary": "Deployment script failed on first attempt",
+      "linkedEventIds": [
+        "evt_001",
+        "evt_002"
+      ],
+      "linkedActorIds": [
+        "actor_main"
+      ],
+      "domainId": "dom_ops",
+      "districtId": "dist_scripts"
+    }
+  ],
+  "privacy": {
+    "policy": "default-safe",
+    "redactions": {
+      "thinkingContent": true,
+      "toolOutputContent": "hashed",
+      "secretPatternsApplied": true,
+      "absolutePathsRedacted": true,
+      "actorNamesPseudonymized": true
+    }
+  }
+}

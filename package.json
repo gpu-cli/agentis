@@ -1,0 +1,33 @@
+{
+  "name": "multiverse",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@vitest/coverage-v8": "^4.0.18",
+    "happy-dom": "^20.7.0",
+    "turbo": "^2.8.14",
+    "vitest": "^4.0.18"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "^18.3.18",
+      "@types/react-dom": "^18.3.5"
+    }
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  }
+}

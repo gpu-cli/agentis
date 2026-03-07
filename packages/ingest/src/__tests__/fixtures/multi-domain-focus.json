@@ -1,0 +1,150 @@
+{
+  "schema": "universal-events",
+  "schemaVersion": 1,
+  "run": {
+    "id": "run_multi_domain",
+    "source": "claude_code",
+    "createdAt": "2026-02-26T10:10:00.000Z",
+    "inputDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "initialFocusDomainId": "dom_alpha",
+    "timeRange": {
+      "start": "2026-02-24T10:00:00.000Z",
+      "end": "2026-02-24T10:02:00.000Z"
+    },
+    "import": {
+      "inputPaths": [
+        "/workspace/.claude/projects/alpha/session-010.jsonl",
+        "/workspace/.claude/projects/beta/session-011.jsonl"
+      ],
+      "redactionPolicy": "default-safe",
+      "exportMode": "shareable"
+    }
+  },
+  "topology": {
+    "world": {
+      "id": "world_workspace",
+      "name": "Workspace"
+    },
+    "domains": [
+      {
+        "id": "dom_alpha",
+        "name": "alpha",
+        "root": "/workspace/alpha",
+        "kind": "git_repo",
+        "confidence": 0.94,
+        "gitRemote": null,
+        "gitBranch": "main"
+      },
+      {
+        "id": "dom_beta",
+        "name": "beta",
+        "root": "/workspace/beta",
+        "kind": "local_folder",
+        "confidence": 0.84,
+        "gitRemote": null,
+        "gitBranch": null
+      }
+    ],
+    "districts": [
+      {
+        "id": "dist_alpha_src",
+        "domainId": "dom_alpha",
+        "name": "src",
+        "pathPrefix": "src/",
+        "confidence": 0.91
+      },
+      {
+        "id": "dist_beta_docs",
+        "domainId": "dom_beta",
+        "name": "docs",
+        "pathPrefix": "docs/",
+        "confidence": 0.83
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "art_alpha_index",
+        "domainId": "dom_alpha",
+        "districtId": "dist_alpha_src",
+        "kind": "file",
+        "ref": "src/index.ts"
+      },
+      {
+        "id": "art_beta_readme",
+        "domainId": "dom_beta",
+        "districtId": "dist_beta_docs",
+        "kind": "document",
+        "ref": "docs/README.md"
+      }
+    ],
+    "layout": {
+      "algorithm": "domain-force-v1",
+      "units": "tile",
+      "domainPositions": [
+        {
+          "domainId": "dom_alpha",
+          "x": -160,
+          "y": 10,
+          "radius": 120
+        },
+        {
+          "domainId": "dom_beta",
+          "x": 150,
+          "y": -20,
+          "radius": 110
+        }
+      ]
+    }
+  },
+  "actors": [
+    {
+      "id": "actor_main",
+      "kind": "agent",
+      "name": "agent-main"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_001",
+      "seqGlobal": 1,
+      "actorSeq": 1,
+      "ts": "2026-02-24T10:00:10.000Z",
+      "actorId": "actor_main",
+      "category": "file_change",
+      "action": "edit",
+      "status": "ok",
+      "context": {
+        "domainId": "dom_alpha"
+      },
+      "dedupeKey": "ue:sha1:multi001",
+      "redacted": false
+    },
+    {
+      "id": "evt_002",
+      "seqGlobal": 2,
+      "actorSeq": 2,
+      "ts": "2026-02-24T10:00:20.000Z",
+      "actorId": "actor_main",
+      "category": "conversation",
+      "action": "message",
+      "status": "ok",
+      "context": {
+        "domainId": "dom_beta"
+      },
+      "dedupeKey": "ue:sha1:multi002",
+      "redacted": false
+    }
+  ],
+  "interactions": [],
+  "issues": [],
+  "privacy": {
+    "policy": "default-safe",
+    "redactions": {
+      "thinkingContent": true,
+      "toolOutputContent": "hashed",
+      "secretPatternsApplied": true,
+      "absolutePathsRedacted": true,
+      "actorNamesPseudonymized": true
+    }
+  }
+}

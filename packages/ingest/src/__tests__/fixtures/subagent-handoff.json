@@ -1,0 +1,133 @@
+{
+  "schema": "universal-events",
+  "schemaVersion": 1,
+  "run": {
+    "id": "run_subagent_handoff",
+    "source": "claude_code",
+    "createdAt": "2026-02-26T10:05:00.000Z",
+    "inputDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "initialFocusDomainId": "dom_service",
+    "timeRange": {
+      "start": "2026-02-24T09:00:00.000Z",
+      "end": "2026-02-24T09:05:00.000Z"
+    },
+    "import": {
+      "inputPaths": [
+        "/workspace/.claude/projects/service/main-session.jsonl",
+        "/workspace/.claude/projects/service/subagents/agent-a1.jsonl"
+      ],
+      "redactionPolicy": "default-safe",
+      "exportMode": "shareable"
+    }
+  },
+  "topology": {
+    "world": {
+      "id": "world_workspace",
+      "name": "Workspace"
+    },
+    "domains": [
+      {
+        "id": "dom_service",
+        "name": "service",
+        "root": "/workspace/service",
+        "kind": "git_repo",
+        "confidence": 0.97,
+        "gitRemote": null,
+        "gitBranch": "feature/subagent"
+      }
+    ],
+    "districts": [
+      {
+        "id": "dist_handlers",
+        "domainId": "dom_service",
+        "name": "handlers",
+        "pathPrefix": "src/handlers/",
+        "confidence": 0.9
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "art_auth",
+        "domainId": "dom_service",
+        "districtId": "dist_handlers",
+        "kind": "file",
+        "ref": "src/handlers/auth.ts"
+      }
+    ]
+  },
+  "actors": [
+    {
+      "id": "actor_main",
+      "kind": "agent",
+      "name": "agent-main"
+    },
+    {
+      "id": "actor_sub",
+      "kind": "subagent",
+      "name": "agent-sub-1",
+      "parentActorId": "actor_main"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_001",
+      "seqGlobal": 1,
+      "actorSeq": 1,
+      "ts": "2026-02-24T09:00:10.000Z",
+      "actorId": "actor_main",
+      "category": "subagent",
+      "action": "spawn",
+      "status": "ok",
+      "target": {
+        "kind": "actor",
+        "id": "actor_sub"
+      },
+      "dedupeKey": "ue:sha1:handoff001",
+      "redacted": false
+    },
+    {
+      "id": "evt_002",
+      "seqGlobal": 2,
+      "actorSeq": 1,
+      "ts": "2026-02-24T09:00:20.000Z",
+      "actorId": "actor_sub",
+      "category": "file_change",
+      "action": "edit",
+      "status": "ok",
+      "target": {
+        "kind": "artifact",
+        "id": "art_auth",
+        "ref": "src/handlers/auth.ts"
+      },
+      "context": {
+        "domainId": "dom_service",
+        "districtId": "dist_handlers",
+        "viaTool": "Edit"
+      },
+      "parentEventId": "evt_001",
+      "dedupeKey": "ue:sha1:handoff002",
+      "redacted": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "int_001",
+      "type": "handoff",
+      "fromActorId": "actor_main",
+      "toActorId": "actor_sub",
+      "eventId": "evt_001",
+      "reason": "Main actor delegates auth task"
+    }
+  ],
+  "issues": [],
+  "privacy": {
+    "policy": "default-safe",
+    "redactions": {
+      "thinkingContent": true,
+      "toolOutputContent": "hashed",
+      "secretPatternsApplied": true,
+      "absolutePathsRedacted": true,
+      "actorNamesPseudonymized": true
+    }
+  }
+}

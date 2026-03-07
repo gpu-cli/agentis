@@ -1,0 +1,135 @@
+{
+  "schema": "universal-events",
+  "schemaVersion": 1,
+  "run": {
+    "id": "run_single_agent",
+    "source": "claude_code",
+    "createdAt": "2026-02-26T10:00:00.000Z",
+    "inputDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "initialFocusDomainId": "dom_app",
+    "timeRange": {
+      "start": "2026-02-24T08:00:00.000Z",
+      "end": "2026-02-24T08:01:00.000Z"
+    },
+    "import": {
+      "inputPaths": [
+        "/workspace/.claude/projects/app/session-001.jsonl"
+      ],
+      "redactionPolicy": "default-safe",
+      "exportMode": "shareable"
+    }
+  },
+  "presentation": {
+    "labels": {
+      "domain": "island",
+      "district": "district"
+    }
+  },
+  "topology": {
+    "world": {
+      "id": "world_workspace",
+      "name": "Workspace"
+    },
+    "domains": [
+      {
+        "id": "dom_app",
+        "name": "app",
+        "root": "/workspace/app",
+        "kind": "git_repo",
+        "confidence": 0.95,
+        "gitRemote": null,
+        "gitBranch": "feature/replay"
+      }
+    ],
+    "districts": [
+      {
+        "id": "dist_src",
+        "domainId": "dom_app",
+        "name": "src",
+        "pathPrefix": "src/",
+        "confidence": 0.93
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "art_main",
+        "domainId": "dom_app",
+        "districtId": "dist_src",
+        "kind": "file",
+        "ref": "src/main.ts"
+      }
+    ],
+    "layout": {
+      "algorithm": "domain-force-v1",
+      "units": "tile",
+      "domainPositions": [
+        {
+          "domainId": "dom_app",
+          "x": 0,
+          "y": 0,
+          "radius": 120
+        }
+      ]
+    }
+  },
+  "actors": [
+    {
+      "id": "actor_user",
+      "kind": "human",
+      "name": "user"
+    },
+    {
+      "id": "actor_main",
+      "kind": "agent",
+      "name": "agent-main"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_001",
+      "seqGlobal": 1,
+      "actorSeq": 1,
+      "ts": "2026-02-24T08:00:05.000Z",
+      "actorId": "actor_user",
+      "category": "conversation",
+      "action": "message",
+      "status": "ok",
+      "dedupeKey": "ue:sha1:single001",
+      "redacted": false
+    },
+    {
+      "id": "evt_002",
+      "seqGlobal": 2,
+      "actorSeq": 1,
+      "ts": "2026-02-24T08:00:08.000Z",
+      "actorId": "actor_main",
+      "category": "tool_call",
+      "action": "started",
+      "status": "ok",
+      "target": {
+        "kind": "tool",
+        "name": "Read"
+      },
+      "context": {
+        "domainId": "dom_app"
+      },
+      "correlationId": "corr_001",
+      "dedupeKey": "ue:sha1:single002",
+      "redacted": false
+    }
+  ],
+  "interactions": [],
+  "issues": [],
+  "privacy": {
+    "policy": "default-safe",
+    "redactions": {
+      "thinkingContent": true,
+      "toolOutputContent": "hashed",
+      "secretPatternsApplied": true,
+      "absolutePathsRedacted": true,
+      "actorNamesPseudonymized": true,
+      "hashAlgorithm": "sha256",
+      "hashSalted": true
+    }
+  }
+}
