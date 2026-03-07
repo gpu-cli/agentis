@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 import path from "path";
 
+const isStaticExport = process.env.AGENTIS_STATIC_EXPORT === "true";
+
 const nextConfig: NextConfig = {
-  output: "standalone",
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  output: isStaticExport ? "export" : "standalone",
+  ...(isStaticExport ? {} : { outputFileTracingRoot: path.join(__dirname, "../../") }),
   transpilePackages: [
     "@multiverse/shared",
     "@multiverse/ingest",

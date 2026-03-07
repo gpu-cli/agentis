@@ -1,9 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["AGENTIS_STATIC_EXPORT"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "tsconfig.tsbuildinfo"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "static/**", "out/**", "tsconfig.tsbuildinfo"]
     },
     "dev": {
       "cache": false,

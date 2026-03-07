@@ -5,6 +5,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 out/
+packages/local/static/
 
 # Turborepo
 .turbo/

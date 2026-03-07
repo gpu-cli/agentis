@@ -4,7 +4,6 @@
 
 [![npm version](https://img.shields.io/npm/v/%40agentis%2Flocal?label=%40agentis%2Flocal)](https://www.npmjs.com/package/@agentis/local)
 [![License: MIT](https://img.shields.io/github/license/gpu-cli/agentis)](./LICENSE)
-[![CI](https://github.com/gpu-cli/agentis/actions/workflows/ci.yml/badge.svg)](https://github.com/gpu-cli/agentis/actions/workflows/ci.yml)
 
 ## What is this?
 
