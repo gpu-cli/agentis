@@ -13,7 +13,6 @@ import { TranscriptPage } from '../modes/transcript/TranscriptPage'
 // Constants
 // ---------------------------------------------------------------------------
 
-const AGENTIS_REPO_URL = 'https://github.com/gpu-cli/agentis'
 const AGENTIS_INSTALL_CMD = 'npx @agentis/local'
 
 // ---------------------------------------------------------------------------
@@ -39,9 +38,7 @@ export interface ModeShellProps {
 function RunLocallyCTA() {
   return (
     <a
-      href={AGENTIS_REPO_URL}
-      target="_blank"
-      rel="noopener noreferrer"
+      href="/install"
       className="group block bg-gray-950/70 backdrop-blur-sm border border-gray-700/60 rounded-xl p-6 text-left hover:border-blue-500/50 hover:bg-gray-950/80 hover:shadow-[0_0_30px_rgba(96,165,250,0.08)] transition-all duration-300"
     >
       <div className="text-2xl mb-3">🖥️</div>
