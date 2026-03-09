@@ -10,12 +10,6 @@ import { DemoPage } from '../modes/demo/DemoPage'
 import { TranscriptPage } from '../modes/transcript/TranscriptPage'
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const AGENTIS_REPO_URL = 'https://github.com/gpu-cli/agentis'
-
-// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -45,14 +39,8 @@ function RunLocallyCTA() {
       <h2 className="font-pixel text-sm text-blue-400 mb-2 group-hover:text-blue-300 transition-colors">
         Run Locally
       </h2>
-      <p className="text-xs text-gray-400 leading-relaxed mb-3">
-        Visualize your own coding sessions locally. Your transcripts never leave your machine.
-      </p>
-      <div className="bg-gray-900/80 border border-gray-700/40 rounded-lg px-3 py-2">
-        <code className="text-xs text-green-400 font-mono">git clone {AGENTIS_REPO_URL}</code>
-      </div>
-      <p className="text-[10px] text-gray-500 mt-2">
-        Open source &middot; MIT License &middot; Node.js 18+
+      <p className="text-xs text-gray-400 leading-relaxed">
+        Clone the repo and visualize your own coding sessions. Your transcripts never leave your machine.
       </p>
     </a>
   )
@@ -91,7 +79,7 @@ function ModeSelection({ transcriptUploadEnabled }: { transcriptUploadEnabled: b
               Demo Mode
             </h2>
             <p className="text-xs text-gray-400 leading-relaxed">
-              Explore 6 pre-built scenarios showing how agents build features, fix incidents, and conduct research.
+              Explore pre-built scenarios showing how agents build features, fix incidents, and conduct research.
             </p>
           </button>
 

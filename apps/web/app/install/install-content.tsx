@@ -53,8 +53,8 @@ function Section({
 
 export function InstallContent() {
   return (
-    <div className="w-full min-h-screen bg-gradient-to-b from-gray-950 to-gray-900 text-gray-100 flex items-start justify-center p-6 md:p-10">
-      <div className="w-full max-w-2xl">
+    <div className="w-full h-screen bg-gradient-to-b from-gray-950 to-gray-900 text-gray-100 overflow-y-auto">
+      <div className="w-full max-w-2xl mx-auto p-6 md:p-10">
         {/* Header */}
         <div className="mb-8">
           <a

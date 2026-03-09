@@ -13,9 +13,6 @@ import type { ScenarioData } from '@multiverse/shared'
 // ---------------------------------------------------------------------------
 
 export type DemoScenarioName =
-  | 'single-island'
-  | 'multi-district'
-  | 'multi-island'
   | 'password-reset'
   | 'incident-bad-env'
   | 'research'
@@ -31,24 +28,6 @@ export interface DemoScenarioMeta {
 // ---------------------------------------------------------------------------
 
 export const DEMO_SCENARIOS: Record<DemoScenarioName, DemoScenarioMeta> = {
-  'single-island': {
-    label: '🏝️ Health Check',
-    description:
-      'Small single-repo session: agent adds a health check endpoint, updates config, verifies tests, and commits.',
-    fixtureUrl: '/demos/single-island.jsonl',
-  },
-  'multi-district': {
-    label: '🔑 JWT Auth',
-    description:
-      'Agent implements JWT authentication across API routes, utilities, middleware, and test files in one repo.',
-    fixtureUrl: '/demos/multi-district.jsonl',
-  },
-  'multi-island': {
-    label: '📦 Shared Types',
-    description:
-      'Cross-package feature in a monorepo: shared types in core, server handlers, UI components, with full typecheck and build.',
-    fixtureUrl: '/demos/multi-island.jsonl',
-  },
   'password-reset': {
     label: '🔐 Password Reset',
     description:
