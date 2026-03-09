@@ -165,22 +165,37 @@ export function InstallContent() {
             <ul className="text-sm text-gray-400 space-y-2">
               <li>
                 •{" "}
-                <span className="text-gray-200">Node.js 18+</span> — check with{" "}
+                <a
+                  href="https://nodejs.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
+                >
+                  Node.js 18+
+                </a>{" "}
+                — check with{" "}
                 <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                   node --version
                 </code>
               </li>
               <li>
                 •{" "}
-                <span className="text-gray-200">pnpm</span> — enable with{" "}
+                <a
+                  href="https://pnpm.io/installation"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
+                >
+                  pnpm
+                </a>{" "}
+                — enable with{" "}
                 <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                   corepack enable
                 </code>
               </li>
               <li>
-                • A modern browser with{" "}
-                <span className="text-gray-200">WebGL2</span> (Chrome, Firefox,
-                Edge, Safari 15+)
+                • A modern browser with WebGL2 (Chrome, Firefox, Edge, Safari
+                15+)
               </li>
             </ul>
           </Section>
