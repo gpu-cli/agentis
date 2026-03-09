@@ -106,8 +106,8 @@ export function InstallContent() {
               Run Locally
             </h2>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Visualize your AI coding sessions on your own machine. No server, no
-              cloud — everything runs in your browser.
+              Visualize your coding sessions on your own machine. No server
+              required, everything runs in the browser.
             </p>
           </div>
 
@@ -156,7 +156,7 @@ export function InstallContent() {
               <code className="text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                 http://localhost:3000
               </code>
-              . Upload your transcripts and explore.
+              . Drop in your transcripts and go.
             </p>
           </Section>
 
@@ -173,7 +173,7 @@ export function InstallContent() {
                 >
                   Node.js 18+
                 </a>{" "}
-                — check with{" "}
+                 · check with{" "}
                 <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                   node --version
                 </code>
@@ -188,7 +188,7 @@ export function InstallContent() {
                 >
                   pnpm
                 </a>{" "}
-                — enable with{" "}
+                 · enable with{" "}
                 <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                   corepack enable
                 </code>
@@ -211,12 +211,12 @@ export function InstallContent() {
                   <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                     ~/.claude/projects/
                   </code>{" "}
-                  — JSONL files in session directories
+                  · JSONL files in session subdirectories
                 </div>
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-3">
-              More transcript formats coming soon (Cursor, Copilot, Codex).
+              Cursor, Copilot, and Codex support planned.
             </p>
           </Section>
 
