@@ -7,6 +7,8 @@
 // locations, and links to the GitHub repo. Matches Multiverse UI aesthetic.
 // ============================================================================
 
+import { ScrollArea } from "@multiverse/ui"
+
 const AGENTIS_REPO_URL = "https://github.com/gpu-cli/agentis"
 
 function CopyButton({ text }: { text: string }) {
@@ -53,7 +55,7 @@ function Section({
 
 export function InstallContent() {
   return (
-    <div className="w-full h-screen bg-gradient-to-b from-gray-950 to-gray-900 text-gray-100 overflow-y-auto">
+    <ScrollArea className="w-full h-screen bg-gradient-to-b from-gray-950 to-gray-900 text-gray-100">
       <div className="w-full max-w-2xl mx-auto p-6 md:p-10">
         {/* Header */}
         <div className="mb-8">
@@ -207,6 +209,6 @@ export function InstallContent() {
           </a>
         </div>
       </div>
-    </div>
+    </ScrollArea>
   )
 }
