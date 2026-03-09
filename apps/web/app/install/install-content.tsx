@@ -3,12 +3,11 @@
 // ============================================================================
 // Install Page — docs/install content for hosted app
 //
-// Shows why to run locally, install command, requirements, transcript
+// Shows why to run locally, install steps, requirements, transcript
 // locations, and links to the GitHub repo. Matches Multiverse UI aesthetic.
 // ============================================================================
 
 const AGENTIS_REPO_URL = "https://github.com/gpu-cli/agentis"
-const INSTALL_CMD = "npx @agentis/local"
 
 function CopyButton({ text }: { text: string }) {
   const handleCopy = () => {
@@ -108,11 +107,17 @@ export function InstallContent() {
         </Section>
 
         {/* Install */}
-        <Section title="Install & Run">
-          <CodeBlock>{INSTALL_CMD}</CodeBlock>
+        <Section title="Get Started">
+          <div className="space-y-2">
+            <CodeBlock>{`git clone ${AGENTIS_REPO_URL}.git`}</CodeBlock>
+            <CodeBlock>{"cd agentis && pnpm install && pnpm dev"}</CodeBlock>
+          </div>
           <p className="text-xs text-gray-500 mt-2">
-            This starts a local server and opens your browser. No global install
-            needed.
+            Opens on{" "}
+            <code className="text-gray-400 bg-gray-800 px-1 rounded">
+              http://localhost:3000
+            </code>
+            . Upload your transcripts and explore.
           </p>
         </Section>
 
@@ -120,10 +125,17 @@ export function InstallContent() {
         <Section title="Requirements">
           <ul className="text-sm text-gray-400 space-y-1">
             <li>
-              • <span className="text-gray-200">Node.js 18+</span> — check
-              with{" "}
+              •{" "}
+              <span className="text-gray-200">Node.js 18+</span> — check with{" "}
               <code className="text-xs text-gray-300 bg-gray-800 px-1 rounded">
                 node --version
+              </code>
+            </li>
+            <li>
+              •{" "}
+              <span className="text-gray-200">pnpm</span> — enable with{" "}
+              <code className="text-xs text-gray-300 bg-gray-800 px-1 rounded">
+                corepack enable
               </code>
             </li>
             <li>

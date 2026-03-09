@@ -13,7 +13,7 @@ import { TranscriptPage } from '../modes/transcript/TranscriptPage'
 // Constants
 // ---------------------------------------------------------------------------
 
-const AGENTIS_INSTALL_CMD = 'npx @agentis/local'
+const AGENTIS_REPO_URL = 'https://github.com/gpu-cli/agentis'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -49,7 +49,7 @@ function RunLocallyCTA() {
         Visualize your own coding sessions locally. Your transcripts never leave your machine.
       </p>
       <div className="bg-gray-900/80 border border-gray-700/40 rounded-lg px-3 py-2">
-        <code className="text-xs text-green-400 font-mono">{AGENTIS_INSTALL_CMD}</code>
+        <code className="text-xs text-green-400 font-mono">git clone {AGENTIS_REPO_URL}</code>
       </div>
       <p className="text-[10px] text-gray-500 mt-2">
         Open source &middot; MIT License &middot; Node.js 18+

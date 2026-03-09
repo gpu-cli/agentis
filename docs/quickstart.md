@@ -4,47 +4,36 @@ Agentis turns AI coding transcripts into a pixel-art game world you can explore 
 
 ## Prerequisites
 
-- Node.js 18 or newer
+- [Node.js](https://nodejs.org/) 18 or newer
+- [pnpm](https://pnpm.io/) (install with `corepack enable`)
 
-## Install and Run
-
-In any terminal, run:
+## Clone and Run
 
 ```bash
-npx @agentis/local
+git clone git@github.com:gpu-cli/agentis.git
+cd agentis
+pnpm install
+pnpm dev
 ```
 
-This command starts a local web server and opens Agentis in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Upload a Transcript
 
-1. Open Agentis in your browser.
-2. Click **Upload Transcripts**.
-3. Select one or more `.jsonl` transcript files from your computer.
+1. Click **Upload Transcripts** on the home screen.
+2. Select one or more `.jsonl` transcript files from your computer.
 
-Agentis will load them and build a visual replay.
+Agentis will parse them and build a visual replay.
 
 ## Try a Demo
 
-Want to test quickly without your own files? Open:
-
-```text
-/demo
-```
-
-Demo mode loads built-in sample scenarios so you can see how the visualization works right away.
-
-## CLI Options
-
-- `--port` - choose which local port to run on
-- `--no-open` - start the server without automatically opening a browser tab
-- `--help` - show all available command options
+Want to explore without your own files? Click **Demo Mode** on the home screen, or navigate directly to `/demo`. This loads built-in sample scenarios so you can see the visualization in action.
 
 ## What You'll See
 
 - **Islands** represent repositories
-- **Districts** represent modules
+- **Districts** represent modules or directories
 - **Buildings** represent files
-- Animated agents move around and perform actions based on transcript events
+- Animated agents move around performing actions based on transcript events
 
-You can use this view to understand what happened during coding sessions at a glance.
+You can use this to understand what happened during coding sessions at a glance.
