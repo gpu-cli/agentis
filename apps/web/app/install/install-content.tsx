@@ -5,26 +5,53 @@
 //
 // Shows why to run locally, install steps, requirements, transcript
 // locations, and links to the GitHub repo. Matches Multiverse UI aesthetic.
+//
+// Typography system (consistent across Multiverse):
+//   App title (toolbar):   text-xs  text-green-400  font-pixel
+//   Page heading:          text-sm  text-green-400  font-pixel
+//   Section heading:       text-xs  text-blue-400   font-pixel
+//   Body:                  text-sm  text-gray-400
+//   Body emphasis:         text-sm  text-gray-200
+//   Caption/helper:        text-xs  text-gray-500
+//   Code inline:           text-xs  text-gray-300   font-mono
+//   Code block:            text-sm  text-green-400  font-mono
+//   Badge (toolbar):       text-xs  varies          font-pixel
+//   Link:                  text-sm  text-blue-400
+//   Footer:                text-xs  text-gray-600
 // ============================================================================
 
+import { useState } from "react"
 import { ScrollArea } from "@multiverse/ui"
+import { Copy, Check } from "lucide-react"
 
 const AGENTIS_REPO_URL = "https://github.com/gpu-cli/agentis"
 
 function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(text).catch(() => {
-      // Fallback: select the text for manual copy
-    })
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {
+        // Fallback: silent fail
+      })
   }
 
   return (
     <button
       onClick={handleCopy}
-      className="cursor-pointer text-gray-500 hover:text-gray-300 transition-colors text-xs ml-2"
-      title="Copy to clipboard"
+      className="cursor-pointer text-gray-500 hover:text-gray-300 transition-colors ml-2 shrink-0"
+      title={copied ? "Copied!" : "Copy to clipboard"}
     >
-      📋
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-green-400" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
     </button>
   )
 }
@@ -72,13 +99,13 @@ export function InstallContent() {
 
       {/* Scrollable content */}
       <ScrollArea className="flex-1">
-        <div className="w-full max-w-2xl mx-auto p-6 md:p-10">
+        <div className="w-full max-w-3xl mx-auto p-6 md:p-10">
           {/* Page intro */}
           <div className="mb-8">
             <h2 className="font-pixel text-sm text-green-400 mb-2 drop-shadow-[0_0_24px_rgba(74,222,128,0.35)]">
               Run Locally
             </h2>
-            <p className="text-xs text-gray-300 leading-relaxed">
+            <p className="text-sm text-gray-400 leading-relaxed">
               Visualize your AI coding sessions on your own machine. No server, no
               cloud — everything runs in your browser.
             </p>
@@ -109,10 +136,10 @@ export function InstallContent() {
                   className="bg-gray-950/70 border border-gray-700/40 rounded-lg p-4 text-center"
                 >
                   <div className="text-xl mb-2">{item.icon}</div>
-                  <div className="text-xs font-medium text-gray-200 mb-1">
+                  <div className="text-sm font-medium text-gray-200 mb-1">
                     {item.label}
                   </div>
-                  <div className="text-[11px] text-gray-500">{item.desc}</div>
+                  <div className="text-xs text-gray-500">{item.desc}</div>
                 </div>
               ))}
             </div>
@@ -124,9 +151,9 @@ export function InstallContent() {
               <CodeBlock>{`git clone ${AGENTIS_REPO_URL}.git`}</CodeBlock>
               <CodeBlock>{"cd agentis && pnpm install && pnpm dev"}</CodeBlock>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-gray-500 mt-3">
               Opens on{" "}
-              <code className="text-gray-400 bg-gray-800 px-1 rounded">
+              <code className="text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                 http://localhost:3000
               </code>
               . Upload your transcripts and explore.
@@ -135,23 +162,25 @@ export function InstallContent() {
 
           {/* Requirements */}
           <Section title="Requirements">
-            <ul className="text-xs text-gray-400 space-y-1.5">
+            <ul className="text-sm text-gray-400 space-y-2">
               <li>
                 •{" "}
                 <span className="text-gray-200">Node.js 18+</span> — check with{" "}
-                <code className="text-gray-300 bg-gray-800 px-1 rounded">
+                <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                   node --version
                 </code>
               </li>
               <li>
                 •{" "}
                 <span className="text-gray-200">pnpm</span> — enable with{" "}
-                <code className="text-gray-300 bg-gray-800 px-1 rounded">
+                <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                   corepack enable
                 </code>
               </li>
               <li>
-                • A modern browser with WebGL2 (Chrome, Firefox, Edge, Safari 15+)
+                • A modern browser with{" "}
+                <span className="text-gray-200">WebGL2</span> (Chrome, Firefox,
+                Edge, Safari 15+)
               </li>
             </ul>
           </Section>
@@ -160,30 +189,30 @@ export function InstallContent() {
           <Section title="Where Are My Transcripts?">
             <div className="bg-gray-950/70 border border-gray-700/40 rounded-lg p-4 space-y-3">
               <div>
-                <div className="text-xs text-gray-200 font-medium mb-1">
+                <div className="text-sm text-gray-200 font-medium mb-1">
                   Claude Code
                 </div>
-                <div className="text-xs text-gray-500">
-                  <code className="text-gray-400 bg-gray-800 px-1 rounded">
+                <div className="text-sm text-gray-400">
+                  <code className="text-xs text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                     ~/.claude/projects/
                   </code>{" "}
                   — JSONL files in session directories
                 </div>
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-gray-500 mt-3">
               More transcript formats coming soon (Cursor, Copilot, Codex).
             </p>
           </Section>
 
           {/* Links */}
           <Section title="Learn More">
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-4">
               <a
                 href={AGENTIS_REPO_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
+                className="text-sm text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
               >
                 GitHub Repository
               </a>
@@ -191,7 +220,7 @@ export function InstallContent() {
                 href={`${AGENTIS_REPO_URL}/blob/main/docs/quickstart.md`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
+                className="text-sm text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
               >
                 Quickstart Guide
               </a>
@@ -199,7 +228,7 @@ export function InstallContent() {
                 href={`${AGENTIS_REPO_URL}/blob/main/docs/troubleshooting.md`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
+                className="text-sm text-blue-400 hover:text-blue-300 transition-colors underline underline-offset-2"
               >
                 Troubleshooting
               </a>
@@ -207,7 +236,7 @@ export function InstallContent() {
           </Section>
 
           {/* Footer */}
-          <div className="text-center text-[11px] text-gray-600 mt-12 pb-8">
+          <div className="text-center text-xs text-gray-600 mt-12 pb-8">
             Open source &middot; MIT License &middot;{" "}
             <a
               href={AGENTIS_REPO_URL}
