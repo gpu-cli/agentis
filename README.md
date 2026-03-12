@@ -1,4 +1,4 @@
-# Agentis 🎮
+# Agentis
 
 **Visualize your AI coding sessions as an interactive pixel-art world.**
 
@@ -8,9 +8,22 @@
 
 Agentis turns AI coding agent transcripts (Claude Code, Cursor, Copilot, and more) into a living, explorable game world. Repositories become islands, modules become districts, files become buildings, and agents animate their actions as your session unfolds.
 
-Privacy-first by design: transcript parsing and visualization run entirely in your browser. No server, no cloud processing, and no data leaves your machine.
+Privacy-first by design: transcript parsing and visualization run entirely on your machine. No cloud processing, no data leaves your device.
 
 ## Quick Start
+
+### For users
+
+```bash
+git clone git@github.com:gpu-cli/agentis.git
+cd agentis
+pnpm install
+AGENTIS_LOCAL_MODE=true NEXT_PUBLIC_AGENTIS_LOCAL=true NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Your Claude Code sessions from `~/.claude/projects/` are automatically detected — pick one and visualize, or upload transcript files manually.
+
+### For contributors
 
 ```bash
 git clone git@github.com:gpu-cli/agentis.git
@@ -19,8 +32,6 @@ pnpm install
 pnpm dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000), upload your transcript files, and explore.
-
 Supported formats today:
 - Claude Code JSONL
 - More transcript formats coming soon
@@ -28,12 +39,34 @@ Supported formats today:
 ## Useful Commands
 
 ```bash
-pnpm dev          # Start dev server on :3000
-pnpm build        # Production build
-pnpm typecheck    # TypeScript check
-pnpm test         # Run tests
-pnpm lint         # Lint
+pnpm dev              # Start dev server on :3000
+pnpm build            # Production build
+pnpm typecheck        # TypeScript check
+pnpm test             # Run tests
+pnpm lint             # Lint
 ```
+
+## Auto-Discovery (Local Mode)
+
+When running with `AGENTIS_LOCAL_MODE=true`, the app scans `~/.claude/projects/` and shows your Claude Code sessions directly in the import screen. Select any session to load it instantly — no manual file hunting needed.
+
+The discovery runs entirely on your machine via local API routes bound to `127.0.0.1`. Your transcripts never leave your device.
+
+To enable auto-discovery in dev:
+
+```bash
+AGENTIS_LOCAL_MODE=true NEXT_PUBLIC_AGENTIS_LOCAL=true NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true pnpm dev
+```
+
+Or create `apps/web/.env.local`:
+
+```env
+AGENTIS_LOCAL_MODE=true
+NEXT_PUBLIC_AGENTIS_LOCAL=true
+NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true
+```
+
+Manual upload (Files, Folder, Zip) is always available as a fallback.
 
 ## Project Structure
 

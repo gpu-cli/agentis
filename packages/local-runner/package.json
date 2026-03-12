@@ -1,0 +1,27 @@
+{
+  "name": "@agentis/local",
+  "version": "0.1.0",
+  "description": "Run Agentis locally — auto-discover and visualize your Claude Code sessions",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agentis-local": "./bin/agentis-local.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "scripts": {
+    "typecheck": "echo 'no-op (plain JS)'"
+  },
+  "keywords": [
+    "agentis",
+    "claude",
+    "transcript",
+    "visualization",
+    "pixel-art"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gpu-cli/agentis"
+  }
+}

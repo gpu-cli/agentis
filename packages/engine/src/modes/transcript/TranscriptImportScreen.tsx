@@ -1,11 +1,16 @@
 // ============================================================================
 // Transcript Import Screen — Upload flow for transcript mode
-// (Based on OnboardingScreen, but without "Skip for Demo" button)
-// Supports Files / Folder / Zip import modes with progress + warnings
+//
+// Two-section layout:
+// 1. Auto-detected sessions (when local mode is available)
+// 2. Manual upload (Files / Folder / Zip) — always available as fallback
 // ============================================================================
 
-import { useMemo, useState, type ChangeEventHandler, type DragEvent } from 'react'
+import { useCallback, useMemo, useState, type ChangeEventHandler, type DragEvent } from 'react'
 import { OnboardingBackdrop } from '../../components/OnboardingBackdrop'
+import { useLocalSessions } from '../../hooks/useLocalSessions'
+import { fetchSessionFiles, reconstructFiles } from './localSessionImport'
+import type { LocalSessionSummary } from '@multiverse/shared/local-api-types'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,6 +20,20 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatRelativeTime(isoDate: string): string {
+  const now = Date.now()
+  const then = new Date(isoDate).getTime()
+  const diffMs = now - then
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return 'just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 30) return `${diffDays}d ago`
+  return new Date(isoDate).toLocaleDateString()
 }
 
 /** Detect browser support for the webkitdirectory attribute */
@@ -53,7 +72,154 @@ interface TranscriptImportScreenProps {
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Auto-Detected Sessions Panel
+// ---------------------------------------------------------------------------
+
+function AutoDetectedPanel({
+  sessions,
+  isLoading,
+  isLocalAvailable,
+  onLoadSession,
+  loadingSessionId,
+}: {
+  sessions: LocalSessionSummary[]
+  isLoading: boolean
+  isLocalAvailable: boolean
+  onLoadSession: (session: LocalSessionSummary) => void
+  loadingSessionId: string | null
+}) {
+  // Don't render anything if local mode is not available and not loading
+  if (!isLoading && !isLocalAvailable) return null
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
+        <h2 className="text-xs uppercase tracking-wide text-gray-400">
+          Auto-detected sessions
+        </h2>
+      </div>
+
+      {isLoading && (
+        <div className="bg-gray-950/40 border border-gray-700/50 rounded-lg p-4 text-center">
+          <span className="text-xs text-gray-500 animate-pulse">
+            Scanning for Claude Code transcripts...
+          </span>
+        </div>
+      )}
+
+      {!isLoading && isLocalAvailable && sessions.length === 0 && (
+        <div className="bg-gray-950/40 border border-gray-700/50 rounded-lg p-4">
+          <div className="text-xs text-gray-500 text-center">
+            No sessions found in{' '}
+            <code className="text-gray-400 bg-gray-800 px-1 py-0.5 rounded text-[10px]">
+              ~/.claude/projects/
+            </code>
+          </div>
+          <div className="text-[10px] text-gray-600 text-center mt-1">
+            Run a Claude Code session first, then refresh this page.
+          </div>
+        </div>
+      )}
+
+      {!isLoading && sessions.length > 0 && (
+        <div className="space-y-1.5">
+          {/* Load Latest — prominent CTA for the newest session */}
+          <button
+            onClick={() => sessions[0] && onLoadSession(sessions[0])}
+            disabled={loadingSessionId !== null}
+            className="w-full bg-green-800/40 hover:bg-green-800/60 border border-green-700/50 rounded-lg p-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-green-300 font-medium group-hover:text-green-200">
+                  {loadingSessionId === sessions[0]?.sessionId
+                    ? 'Loading...'
+                    : 'Load latest session'}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  <span className="text-green-400/70">{sessions[0]?.project}</span>
+                  {' \u00b7 '}
+                  {formatRelativeTime(sessions[0]?.updatedAt ?? '')}
+                  {' \u00b7 '}
+                  {sessions[0] && formatBytes(sessions[0].totalBytes)}
+                  {sessions[0]?.hasSubagents ? ' \u00b7 has subagents' : ''}
+                </div>
+              </div>
+              <span className="text-green-400 text-sm group-hover:text-green-300">
+                {loadingSessionId === sessions[0]?.sessionId ? '\u23F3' : '\u25B6'}
+              </span>
+            </div>
+          </button>
+
+          {/* Remaining sessions (collapsed list) */}
+          {sessions.length > 1 && (
+            <SessionList
+              sessions={sessions.slice(1)}
+              onLoadSession={onLoadSession}
+              loadingSessionId={loadingSessionId}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SessionList({
+  sessions,
+  onLoadSession,
+  loadingSessionId,
+}: {
+  sessions: LocalSessionSummary[]
+  onLoadSession: (session: LocalSessionSummary) => void
+  loadingSessionId: string | null
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const visible = expanded ? sessions : sessions.slice(0, 3)
+  const hasMore = sessions.length > 3
+
+  return (
+    <div>
+      <div className="max-h-40 overflow-auto space-y-1">
+        {visible.map((session) => (
+          <button
+            key={session.sessionId}
+            onClick={() => onLoadSession(session)}
+            disabled={loadingSessionId !== null}
+            className="w-full bg-gray-950/40 hover:bg-gray-800/60 border border-gray-700/40 rounded px-3 py-2 text-left transition-colors disabled:opacity-50 text-xs flex items-center justify-between gap-2"
+          >
+            <div className="min-w-0">
+              <span className="text-gray-300 truncate block">{session.project}</span>
+              <span className="text-[10px] text-gray-500">
+                {formatRelativeTime(session.updatedAt)}
+                {' \u00b7 '}
+                {session.fileCount} file{session.fileCount !== 1 ? 's' : ''}
+                {' \u00b7 '}
+                {formatBytes(session.totalBytes)}
+              </span>
+            </div>
+            <span className="text-gray-500 hover:text-gray-300 shrink-0">
+              {loadingSessionId === session.sessionId ? '\u23F3' : '\u25B6'}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {hasMore && !expanded && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1 underline underline-offset-2"
+        >
+          Show {sessions.length - 3} more sessions
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
 // ---------------------------------------------------------------------------
 
 export function TranscriptImportScreen({
@@ -69,9 +235,32 @@ export function TranscriptImportScreen({
   const [isDragging, setIsDragging] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importMode, setImportMode] = useState<ImportMode>('files')
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
+
+  const { sessions, isLoading: sessionsLoading, isLocalAvailable } = useLocalSessions()
 
   const fileNames = useMemo(() => files.map((file) => file.name), [files])
   const totalSize = useMemo(() => files.reduce((sum, f) => sum + f.size, 0), [files])
+
+  // ---- Auto-detect session load handler ----
+
+  const handleLoadSession = useCallback(async (session: LocalSessionSummary) => {
+    setLoadingSessionId(session.sessionId)
+    setLocalError(null)
+
+    try {
+      const payload = await fetchSessionFiles(session.sessionId)
+      const reconstructed = reconstructFiles(payload)
+      setIsImporting(true)
+      await onImport(payload.projectName, reconstructed)
+      setIsImporting(false)
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Failed to load session')
+    } finally {
+      setLoadingSessionId(null)
+    }
+  }, [onImport])
 
   // ---- File acceptance per mode ----
 
@@ -167,11 +356,11 @@ export function TranscriptImportScreen({
   return (
     <div className="w-full h-full bg-gradient-to-b from-gray-950 to-gray-900 text-gray-100 flex items-center justify-center p-6 md:p-10 relative">
       <OnboardingBackdrop />
-      <div className="relative z-10 w-full max-w-3xl bg-gray-900/80 border border-gray-700 rounded-xl p-6 md:p-8 shadow-2xl backdrop-blur-sm">
+      <div className="relative z-10 w-full max-w-3xl bg-gray-900/80 border border-gray-700 rounded-xl p-6 md:p-8 shadow-2xl backdrop-blur-sm max-h-[90vh] overflow-y-auto">
         <div className="mb-6">
-          <h1 className="font-pixel text-lg text-green-400 mb-2">Upload Transcripts</h1>
+          <h1 className="font-pixel text-lg text-green-400 mb-2">Import Transcripts</h1>
           <p className="text-sm text-gray-300">
-            Name your project and upload Claude transcript files to run a simulation.
+            Select a Claude Code session to visualize, or upload transcript files manually.
           </p>
         </div>
 
@@ -182,6 +371,38 @@ export function TranscriptImportScreen({
           </div>
         )}
 
+        {/* Local session load error */}
+        {localError && (
+          <div className="mb-4 bg-red-900/30 border border-red-700/50 rounded px-3 py-2 text-xs text-red-300">
+            {localError}
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* Section 1: Auto-detected sessions                            */}
+        {/* ============================================================ */}
+        <AutoDetectedPanel
+          sessions={sessions}
+          isLoading={sessionsLoading}
+          isLocalAvailable={isLocalAvailable}
+          onLoadSession={handleLoadSession}
+          loadingSessionId={loadingSessionId}
+        />
+
+        {/* Separator — only show when auto-detected panel is visible */}
+        {(sessionsLoading || isLocalAvailable) && (
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex-1 h-px bg-gray-700/50" />
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider">
+              Or upload manually
+            </span>
+            <div className="flex-1 h-px bg-gray-700/50" />
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* Section 2: Manual upload (unchanged fallback)                 */}
+        {/* ============================================================ */}
         <div className="space-y-4">
           <label className="block">
             <span className="block text-xs uppercase tracking-wide text-gray-400 mb-1">Project name</span>

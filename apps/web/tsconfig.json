@@ -34,6 +34,12 @@
       "@multiverse/shared/*": [
         "../../packages/shared/src/*"
       ],
+      "@multiverse/ingest": [
+        "../../packages/ingest/src/index.ts"
+      ],
+      "@multiverse/ingest/*": [
+        "../../packages/ingest/src/*"
+      ],
       "@multiverse/ingest/browser": [
         "../../packages/ingest/src/browser/index.ts"
       ],
