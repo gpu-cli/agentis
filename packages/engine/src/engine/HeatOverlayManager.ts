@@ -155,6 +155,13 @@ export class HeatOverlayManager {
     }
   }
 
+  /** Clear all heat state so overlays don't bleed across scenario loads */
+  reset(): void {
+    this.heatEntries = []
+    this.lastEventCount = 0
+    this.heatGraphics.clear()
+  }
+
   destroy(): void {
     this.heatGraphics.destroy()
     this.container.destroy({ children: true })

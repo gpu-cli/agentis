@@ -82,6 +82,35 @@ function extractPathsFromCommand(command: string): string[] {
   return paths
 }
 
+/**
+ * Classify whether a file path is a "planning" path that should be excluded
+ * from the core repo map. Planning paths include:
+ * - .claude/ directory (agent planning files)
+ * - Home directory paths outside repo root
+ * - /tmp/ and /private/tmp/ paths (task scratch files)
+ * - AGENTS.md, CLAUDE.md files (agent instruction files)
+ */
+function isPlanningOrExternalPath(filePath: string, repoRoots: string[]): boolean {
+  const normalized = filePath.replace(/\\/gu, '/')
+
+  // Check if path is under .claude/ directory
+  if (/(?:^|\/)\.claude\//u.test(normalized)) return true
+
+  // Check for AGENTS.md / CLAUDE.md at any level
+  if (/(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(normalized)) return true
+
+  // Check for /tmp/ or /private/tmp/ paths
+  if (/^\/(?:private\/)?tmp\//u.test(normalized)) return true
+
+  // Check for home directory paths that aren't under any repo root
+  if (/^\/(?:Users|home)\//u.test(normalized)) {
+    const isUnderRepo = repoRoots.some((root) => normalized.startsWith(`${root}/`))
+    if (!isUnderRepo) return true
+  }
+
+  return false
+}
+
 /** Extract file paths from tool_use inputs (top-level + nested progress blocks) */
 function extractFilePathsFromToolInputs(records: BrowserParsedRecord[]): string[] {
   const paths = new Set<string>()
@@ -207,6 +236,7 @@ export function extractTopology(
   const toolInputPaths = extractFilePathsFromToolInputs(records)
   const toolResultPaths = extractFilePathsFromToolResults(records, repoRoots[0]!)
   const allFilePaths = [...new Set([...toolInputPaths, ...toolResultPaths])]
+    .filter((p) => !isPlanningOrExternalPath(p, repoRoots))
 
   // Build domains
   const domains: UniversalDomain[] = repoRoots.map((root) => ({

@@ -67,25 +67,39 @@ function seededPick<T>(items: readonly T[], seed: number, offset = 0): T {
 // ---------------------------------------------------------------------------
 
 function toAgentEventType(event: UniversalEvent): AgentEventType {
-  // Error status takes priority — tool calls that fail are errors, not tool_use
-  if (event.status === 'error') return 'error_spawn'
+  // Subagent lifecycle takes priority — never classify as errors
+  if (event.category === 'subagent' && event.action === 'spawn') return 'subagent_spawn'
+  if (event.category === 'subagent' && event.action === 'complete') return 'subagent_complete'
+  if (event.category === 'subagent') return 'task_start'
+
+  // File changes
   if (event.category === 'file_change') {
     if (event.action === 'create') return 'file_create'
     if (event.action === 'edit') return 'file_edit'
     if (event.action === 'delete') return 'file_delete'
   }
-  if (event.category === 'conversation') return 'message_send'
-  if (event.category === 'subagent' && event.action === 'spawn') return 'subagent_spawn'
-  if (event.category === 'subagent' && event.action === 'complete') return 'subagent_complete'
-  if (event.category === 'subagent') return 'task_start'
+
+  // Tool calls — error status on a tool call means the tool returned an error,
+  // not a system error. Show as tool_use, not error_spawn.
   if (event.category === 'tool_call') return 'tool_use'
+
+  // Conversation
+  if (event.category === 'conversation') return 'message_send'
+
   // Map reasoning to tool_use so it's visible as agent activity (not idle)
   if (event.category === 'reasoning') return 'tool_use'
+
   // System events are turn boundaries — treat as task completion
   if (event.category === 'system') return 'task_complete'
+
   // Progress records that made it through without being expanded should map to tool_use
   // (indicates subagent activity)
   if (event.category === 'progress') return 'tool_use'
+
+  // Only genuine system/API errors become error_spawn
+  // (events with no recognized category but error status)
+  if (event.status === 'error') return 'error_spawn'
+
   return 'idle'
 }
 
@@ -238,7 +252,7 @@ function buildSnapshotFromReplay(input: UniversalEventsPackage): PlanetSnapshot 
 
   // --- 5. Build agents from actor data ---
   const agents: Agent[] = input.actors
-    .filter((actor) => actor.kind === 'agent' || actor.kind === 'subagent')
+    .filter((actor) => actor.kind === 'agent')
     .map((actor, actorIndex) => {
       const agentType = seededPick(AGENT_TYPES, seed, actorIndex + 300)
       const agentName = seededPick(AGENT_NAMES, seed, actorIndex + 400)
@@ -246,12 +260,18 @@ function buildSnapshotFromReplay(input: UniversalEventsPackage): PlanetSnapshot 
       const targetDistrict = districts[actorIndex % districts.length] ?? districts[0]
       const targetBuilding = buildings.find((b) => b.district_id === targetDistrict?.id) ?? buildings[0]
 
+      // Spiral offset to prevent multiple agents overlapping at the same building
+      const spiralOffsets: Array<[number, number]> = [
+        [1, 1], [2, 0], [0, 2], [-1, 1], [1, -1], [3, 1], [1, 3], [-1, -1],
+      ]
+      const offset = spiralOffsets[actorIndex % spiralOffsets.length]!
+
       const agentX = targetBuilding
-        ? targetBuilding.position.local_x + 1
-        : (targetDistrict?.position.local_x ?? 20) + 3
+        ? targetBuilding.position.local_x + offset[0]
+        : (targetDistrict?.position.local_x ?? 20) + 3 + offset[0]
       const agentY = targetBuilding
-        ? targetBuilding.position.local_y + 1
-        : (targetDistrict?.position.local_y ?? 18) + 3
+        ? targetBuilding.position.local_y + offset[1]
+        : (targetDistrict?.position.local_y ?? 18) + 3 + offset[1]
 
       return {
         id: actor.id,
@@ -379,7 +399,7 @@ function buildAgentEventsFromReplay(input: UniversalEventsPackage): AgentEvent[]
       planet_id: input.topology.world.id,
       seq,
       timestamp,
-      kind: event.status === 'error' ? 'fx' : 'mutation',
+      kind: eventType === 'file_create' || eventType === 'file_edit' || eventType === 'file_delete' ? 'mutation' : 'fx',
       type: eventType,
       source: 'agent_runtime',
       target: {

@@ -21,13 +21,30 @@ import {
 import { useDemoLoader } from './useDemoLoader'
 import { DemoLoadingOverlay, DemoErrorBanner } from './DemoOverlays'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@multiverse/ui'
+import { useMemo, useEffect } from 'react'
 
-const SPEED_OPTIONS = [1, 2, 5, 10]
+function getSpeedOptions(totalEvents: number): number[] {
+  return totalEvents < 50
+    ? [1, 2, 5, 10, 25]
+    : [1, 10, 25, 50, 100]
+}
 
 export function DemoPage() {
   const zoomTier = useUIStore((s) => s.zoomTier)
   const resetMode = useModeStore((s) => s.resetMode)
   const { engine, loadState, currentScenario, switchScenario, retry } = useDemoLoader()
+
+  const speedOptions = useMemo(() => getSpeedOptions(engine.totalEvents), [engine.totalEvents])
+
+  // Clamp speed to nearest available option when options change
+  useEffect(() => {
+    if (!speedOptions.includes(engine.speed)) {
+      const nearest = speedOptions.reduce((prev, curr) =>
+        Math.abs(curr - engine.speed) < Math.abs(prev - engine.speed) ? curr : prev
+      )
+      engine.setSpeed(nearest)
+    }
+  }, [speedOptions, engine.speed, engine.setSpeed])
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -77,19 +94,19 @@ export function DemoPage() {
           </SelectContent>
         </Select>
 
-        {/* Playback controls */}
+        {/* Playback controls + speed */}
         <div className="flex items-center gap-1">
           <button
             onClick={engine.restart}
-            className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
+            className="text-[10px] px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded"
             title="Restart"
           >
-            ⏮
+            🔄
           </button>
           {engine.playbackState === 'playing' ? (
             <button
               onClick={engine.pause}
-              className="text-xs px-2 py-1 bg-yellow-700 hover:bg-yellow-600 rounded"
+              className="text-[10px] px-1.5 py-1 bg-yellow-700 hover:bg-yellow-600 rounded"
             >
               ⏸
             </button>
@@ -97,28 +114,16 @@ export function DemoPage() {
             <button
               onClick={engine.play}
               disabled={engine.playbackState === 'complete'}
-              className="text-xs px-2 py-1 bg-green-700 hover:bg-green-600 rounded disabled:opacity-50"
+              className="text-[10px] px-1.5 py-1 bg-green-700 hover:bg-green-600 rounded disabled:opacity-50"
             >
               ▶️
             </button>
           )}
-          <button
-            onClick={engine.stepForward}
-            disabled={engine.playbackState === 'complete'}
-            className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
-            title="Step Forward"
-          >
-            ⏭
-          </button>
-        </div>
-
-        {/* Speed control */}
-        <div className="flex items-center gap-1">
-          {SPEED_OPTIONS.map((speed) => (
+          {speedOptions.map((speed) => (
             <button
               key={speed}
               onClick={() => engine.setSpeed(speed)}
-              className={`text-[10px] px-1.5 py-0.5 rounded ${
+              className={`text-[10px] px-1.5 py-1 rounded ${
                 engine.speed === speed
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-700 text-gray-400 hover:bg-gray-600'

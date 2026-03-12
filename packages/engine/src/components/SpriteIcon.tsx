@@ -226,12 +226,8 @@ export function resolveToolIcon(toolId: string): string {
 
 /** Scenario selector icons */
 export const SCENARIO_ICON_MAP: Record<string, string> = {
-  'single-island': 'flag',            // flag (simple task)
-  'multi-district': 'item_shield',    // shield (auth)
-  'multi-island': 'gem_town',         // gem (shared types)
-  'password-reset': 'item_key',       // key
-  'incident-bad-env': 'monster_slime', // bug/slime
-  research: 'crystal_1',              // crystal (research)
+  'team-build': 'gem_town',           // gem (team deep research)
+  'refactor-rebuild': 'crystal_1',    // crystal (build task)
 }
 
 /** Follow/target icon */

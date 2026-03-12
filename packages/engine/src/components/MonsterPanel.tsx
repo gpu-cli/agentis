@@ -25,29 +25,6 @@ const SEVERITY_COLORS: Record<string, string> = {
   outage: 'text-red-600',
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  spawned: 'Active',
-  in_combat: 'Being Fixed',
-  dormant: 'Dormant',
-  defeated: 'Resolved',
-  escalated: 'Escalated',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  spawned: 'text-red-400',
-  in_combat: 'text-yellow-400',
-  dormant: 'text-gray-400',
-  defeated: 'text-green-400',
-  escalated: 'text-red-500',
-}
-
-const STATUS_BG: Record<string, string> = {
-  spawned: 'bg-red-400/10 border-red-400/30',
-  in_combat: 'bg-yellow-400/10 border-yellow-400/30',
-  dormant: 'bg-gray-400/10 border-gray-400/30',
-  defeated: 'bg-green-400/10 border-green-400/30',
-  escalated: 'bg-red-500/10 border-red-500/30',
-}
 
 /** Estimate time to resolve based on severity */
 function estimatedResolution(severity: string): string {
@@ -94,8 +71,6 @@ export function MonsterPanel() {
     : undefined
 
   const severityColor = SEVERITY_COLORS[monster.severity] ?? 'text-gray-400'
-  const statusColor = STATUS_COLORS[monster.status] ?? 'text-gray-400'
-  const statusBg = STATUS_BG[monster.status] ?? 'bg-gray-700/50 border-gray-600/30'
 
   return (
     <ResizableSidePanel>
@@ -116,20 +91,22 @@ export function MonsterPanel() {
           </button>
         </div>
 
-        {/* Status badge */}
-        <div className={`rounded border px-3 py-2 mb-4 ${statusBg}`}>
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">
-            Status
-          </span>
-          <span className={`text-xs font-pixel ${statusColor}`}>
-            {STATUS_LABELS[monster.status] ?? monster.status}
-          </span>
-        </div>
+        {/* Tool that failed */}
+        {monster.error_details?.tool_name && (
+          <div className="mb-4">
+            <span className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">
+              Tool
+            </span>
+            <span className="text-xs text-gray-200 font-pixel">
+              {monster.error_details.tool_name}
+            </span>
+          </div>
+        )}
 
         {/* Error message */}
         <div className="mb-4">
           <span className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">
-            Error Message
+            Details
           </span>
           <p className="text-xs text-gray-300 bg-gray-700/50 rounded px-2.5 py-2 font-mono leading-relaxed break-words">
             {monster.error_details?.message ?? 'Unknown error'}

@@ -55,6 +55,9 @@ const tileStates = new Map<string, string>()
 
 const coalescer = new DiffCoalescer()
 
+/** Track pending file_delete setTimeout IDs so they can be cancelled on restart */
+const pendingDeleteTimers = new Set<number>()
+
 // ---------------------------------------------------------------------------
 // Telemetry
 // ---------------------------------------------------------------------------
@@ -103,12 +106,21 @@ function processEventForDiffs(event: AgentEvent): void {
       if (buildingId) {
         const bpos = buildingPositions.get(buildingId)
         if (bpos) {
-          agentPositions.set(event.agent_id, { x: bpos.x, y: bpos.y })
+          // Use tile-local offset when available (F3.3: agent moves to specific tile)
+          const local = (event.metadata as { local?: { x: number; y: number } })?.local
+          const TILE = 32
+          const px = local
+            ? bpos.x + local.x * TILE + TILE / 2
+            : bpos.x
+          const py = local
+            ? bpos.y + local.y * TILE + TILE / 2
+            : bpos.y
+          agentPositions.set(event.agent_id, { x: px, y: py })
           coalescer.add({
             type: 'agent_move',
             id: event.agent_id,
-            x: bpos.x,
-            y: bpos.y,
+            x: px,
+            y: py,
           })
         }
       }
@@ -120,7 +132,7 @@ function processEventForDiffs(event: AgentEvent): void {
       const tileId = event.target?.tile_id
       if (buildingId && tileId) {
         tileBuildingMap.set(tileId, buildingId)
-        tileStates.set(tileId, 'scaffolding')
+        tileStates.set(tileId, 'building')
 
         // Emit tile_create diff so the renderer can add the tile sprite
         const meta = event.metadata as { path?: string; local?: { x: number; y: number } }
@@ -147,7 +159,7 @@ function processEventForDiffs(event: AgentEvent): void {
         // Auto-create tile in worker if not yet tracked (resilient to event ordering)
         if (!tileBuildingMap.has(tileId) && buildingId) {
           tileBuildingMap.set(tileId, buildingId)
-          tileStates.set(tileId, 'scaffolding')
+          tileStates.set(tileId, 'building')
 
           const meta = event.metadata as { path?: string; local?: { x: number; y: number } }
           const fileName = meta.path?.split('/').pop() ?? tileId
@@ -174,9 +186,20 @@ function processEventForDiffs(event: AgentEvent): void {
     case 'file_delete': {
       const tileId = event.target?.tile_id
       if (tileId) {
+        // Immediately mark as ruins for building health recalc
         tileStates.set(tileId, 'ruins')
         const buildingId = tileBuildingMap.get(tileId)
         if (buildingId) recalcBuilding(buildingId)
+
+        // Schedule tile removal after 1.5s (mirrors store-side RUINS_FADE_MS)
+        const timerId = setTimeout(() => {
+          pendingDeleteTimers.delete(timerId as unknown as number)
+          tileStates.delete(tileId)
+          const bId = tileBuildingMap.get(tileId)
+          tileBuildingMap.delete(tileId)
+          if (bId) recalcBuilding(bId)
+        }, 1500) as unknown as number
+        pendingDeleteTimers.add(timerId)
       }
       break
     }
@@ -400,6 +423,10 @@ ctx.onmessage = (ev: MessageEvent) => {
         break
       }
       case 'play':
+        // Recalculate baseTime if it wasn't set (events arrived after initial resetState)
+        if (baseTime === 0 && loadedEvents.length > 0) {
+          baseTime = loadedEvents[0]!.timestamp
+        }
         running = true
         startLoop()
         break
@@ -407,7 +434,19 @@ ctx.onmessage = (ev: MessageEvent) => {
         running = false
         break
       case 'restart':
+        // Stop playback loop and cancel pending timers
+        running = false
+        if (loopTimer !== null) { clearTimeout(loopTimer); loopTimer = null }
+        for (const t of pendingDeleteTimers) clearTimeout(t)
+        pendingDeleteTimers.clear()
+
         resetState()
+        // Clear SoA state — subsequent load_snapshot will re-populate
+        buildingStats.clear()
+        buildingPositions.clear()
+        agentPositions.clear()
+        tileBuildingMap.clear()
+        tileStates.clear()
         post({ type: 'progress', current: 0, total: totalEvents })
         break
       case 'set_speed':

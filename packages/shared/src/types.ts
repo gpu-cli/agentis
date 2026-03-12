@@ -226,6 +226,7 @@ export interface Monster {
   fighting_agent_id?: string
   error_details: {
     message: string
+    tool_name?: string
     stack_trace?: string
     logs?: string[]
   }

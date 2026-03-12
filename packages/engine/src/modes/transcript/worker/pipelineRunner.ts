@@ -76,6 +76,9 @@ export async function runPipeline(
   // Step 2: Canonicalize
   onProgress?.({ stage: 'canonicalize', percent: 40 })
   const cwm = canonicalize(projectName, records)
+  // Extract action spans for span-driven replay beats
+  const { extractActionSpans } = await import('@multiverse/ingest/browser')
+  const actionSpans = extractActionSpans(records, cwm.operations)
   const defaultRepoRoot = cwm.project.repos[0]?.root ?? ''
 
   // Diagnostics: ops per actor (top 5)
@@ -114,6 +117,7 @@ export async function runPipeline(
       solverIterations,
     },
     operations: cwm.operations,
+    actionSpans,
   }
 
   const scenario = toScenarioData(snapshot)

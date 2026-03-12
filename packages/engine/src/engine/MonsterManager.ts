@@ -66,7 +66,7 @@ export class MonsterManager {
   constructor() {
     this.container = new Container()
     this.container.label = 'monsters'
-    this.container.zIndex = 41
+    this.container.zIndex = 43
 
     this.unsubscribe = useMonsterStore.subscribe(() => {
       this.syncMonsters()
@@ -89,6 +89,8 @@ export class MonsterManager {
     for (const monster of monsters.values()) {
       let sprite = this.sprites.get(monster.id)
       if (!sprite) {
+        // Never create sprites for already-defeated monsters (prevents resurrection)
+        if (monster.status === 'defeated') continue
         sprite = this.createMonsterSprite(monster)
         this.sprites.set(monster.id, sprite)
         this.container.addChild(sprite.container)
@@ -126,8 +128,14 @@ export class MonsterManager {
     bodySprite.height = size
     container.addChild(bodySprite)
 
-    // Name label above
-    const label = monster.error_details?.message ?? monster.monster_type
+    // Name label above — show severity, not the raw error message
+    const FRIENDLY_LABELS: Record<string, string> = {
+      warning: 'Warning',
+      error: 'Error',
+      critical: 'Critical',
+      outage: 'Outage',
+    }
+    const label = FRIENDLY_LABELS[monster.severity] ?? 'Error'
     const shortLabel = label.length > 20 ? label.slice(0, 19) + '…' : label
     const nameLabel = new Text({ text: shortLabel, style: nameStyle })
     nameLabel.anchor.set(0.5, 1)
@@ -236,6 +244,19 @@ export class MonsterManager {
         this.sprites.delete(id)
       }
     }
+  }
+
+  /** Clear all sprites so the next store sync recreates from fresh state */
+  reset(): void {
+    for (const sprite of this.sprites.values()) {
+      try {
+        this.container.removeChild(sprite.container)
+        sprite.container.destroy({ children: true })
+      } catch {
+        // PixiJS may already be torn down — safe to ignore
+      }
+    }
+    this.sprites.clear()
   }
 
   destroy(): void {

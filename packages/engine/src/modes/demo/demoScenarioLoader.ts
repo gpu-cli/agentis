@@ -3,6 +3,9 @@
 // Fetches JSONL transcript fixtures and runs them through the same
 // ingest → canonicalize → world-model → layout → ScenarioData pipeline
 // used by the transcript upload flow.
+//
+// Supports both single-file (fixtureUrl) and multi-file (fixtureFiles)
+// scenarios for transcripts with subagent JSONLs.
 // ============================================================================
 
 import { runPipeline } from '../transcript/worker/pipelineRunner'
@@ -13,14 +16,16 @@ import type { ScenarioData } from '@multiverse/shared'
 // ---------------------------------------------------------------------------
 
 export type DemoScenarioName =
-  | 'password-reset'
-  | 'incident-bad-env'
-  | 'research'
+  | 'team-build'
+  | 'refactor-rebuild'
 
 export interface DemoScenarioMeta {
   label: string
   description: string
-  fixtureUrl: string
+  /** Single fixture URL (legacy — use fixtureFiles for multi-file scenarios) */
+  fixtureUrl?: string
+  /** Multiple fixture URLs — main transcript + subagent JSONLs */
+  fixtureFiles?: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -28,23 +33,27 @@ export interface DemoScenarioMeta {
 // ---------------------------------------------------------------------------
 
 export const DEMO_SCENARIOS: Record<DemoScenarioName, DemoScenarioMeta> = {
-  'password-reset': {
-    label: '🔐 Password Reset',
+  'team-build': {
+    label: '👥 Team Deep Research',
     description:
-      'Single agent implements password reset end-to-end: reads existing code, creates files, edits routes, runs tests.',
-    fixtureUrl: '/demos/password-reset.jsonl',
+      'An orchestrator agent delegates deep research across six subagents working in parallel — each explores a different area, then the orchestrator synthesizes their findings into a unified report.',
+    fixtureFiles: [
+      '/demos/team-build/main.jsonl',
+      '/demos/team-build/subagents/agent-a0c65f3460db719b0.jsonl',
+      '/demos/team-build/subagents/agent-a3b3a17e4e2a29531.jsonl',
+      '/demos/team-build/subagents/agent-a665aa7ee7908bf92.jsonl',
+      '/demos/team-build/subagents/agent-ab7a230c4a5d88b67.jsonl',
+      '/demos/team-build/subagents/agent-acbb85266c749a125.jsonl',
+      '/demos/team-build/subagents/agent-adc13b2840de08519.jsonl',
+    ],
   },
-  'incident-bad-env': {
-    label: '🚨 Incident: Bad Env',
+  'refactor-rebuild': {
+    label: '🏗️ Build Task',
     description:
-      'Agent debugs a production incident caused by a bad environment variable — reads logs, searches config, fixes and redeploys.',
-    fixtureUrl: '/demos/incident-bad-env.jsonl',
-  },
-  research: {
-    label: '🔬 Research ADR',
-    description:
-      'Agent investigates API gateway patterns, writes an ADR, cross-links existing docs, and commits.',
-    fixtureUrl: '/demos/research.jsonl',
+      'A single agent executes a build task — reading, editing, and creating files across the codebase to implement a feature end-to-end.',
+    fixtureFiles: [
+      '/demos/refactor-rebuild/main.jsonl',
+    ],
   },
 }
 
@@ -67,8 +76,26 @@ export function clearDemoCache(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Load a demo scenario by fetching its JSONL fixture and running it through
- * the full V3 ingest pipeline (same path as transcript upload).
+ * Resolve fixture URLs from a scenario meta.
+ * Supports both legacy `fixtureUrl` (single file) and `fixtureFiles` (multi-file).
+ */
+function resolveFixtureUrls(meta: DemoScenarioMeta): string[] {
+  if (meta.fixtureFiles && meta.fixtureFiles.length > 0) {
+    return meta.fixtureFiles
+  }
+  if (meta.fixtureUrl) {
+    return [meta.fixtureUrl]
+  }
+  return []
+}
+
+/**
+ * Load a demo scenario by fetching its JSONL fixture(s) and running them
+ * through the full V3 ingest pipeline (same path as transcript upload).
+ *
+ * Supports multi-file scenarios (main transcript + subagent JSONLs) by
+ * fetching all fixture files and passing them as separate entries to
+ * runPipeline.
  *
  * Results are cached in memory so switching between demos is instant after
  * the first load. Concurrent calls for the same scenario share one in-flight
@@ -88,18 +115,36 @@ export async function loadDemoScenario(
   const meta = DEMO_SCENARIOS[name]
   if (!meta) throw new Error(`Unknown demo scenario: ${name}`)
 
+  const urls = resolveFixtureUrls(meta)
+  if (urls.length === 0) {
+    throw new Error(`Demo scenario ${name} has no fixture URLs configured`)
+  }
+
   const promise = (async () => {
     onProgress?.('fetch', 5)
-    const response = await fetch(meta.fixtureUrl)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch demo fixture: ${meta.fixtureUrl} (${response.status})`)
-    }
-    const content = await response.text()
+
+    // Fetch all fixture files in parallel
+    const responses = await Promise.all(
+      urls.map(async (url) => {
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch demo fixture: ${url} (${response.status})`)
+        }
+        return { url, content: await response.text() }
+      }),
+    )
+
+    // Build file contents array — extract filename from URL path
+    const fileContents = responses.map(({ url, content }) => {
+      const segments = url.split('/')
+      const fileName = segments[segments.length - 1] ?? `${name}.jsonl`
+      return { name: fileName, content }
+    })
 
     onProgress?.('pipeline', 10)
     const result = await runPipeline(
       meta.label,
-      [{ name: `${name}.jsonl`, content }],
+      fileContents,
       (progress) => {
         onProgress?.(progress.stage, progress.percent)
       },

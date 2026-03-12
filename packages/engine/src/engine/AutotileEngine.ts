@@ -124,9 +124,11 @@ function generateWallPerimeter(
 ): WallTile[] {
   const wallSet = new Set<string>()
 
-  // Collect all perimeter positions
-  const cols = Math.max(1, Math.ceil(bounds.w / tileSize))
-  const rows = Math.max(1, Math.ceil(bounds.h / tileSize))
+  // Use floor so the perimeter never exceeds the supplied bounds.
+  // Previously ceil caused the right/bottom wall to overshoot by up to
+  // (tileSize - 1) pixels, creating an untiled gap inside the district.
+  const cols = Math.max(1, Math.floor(bounds.w / tileSize))
+  const rows = Math.max(1, Math.floor(bounds.h / tileSize))
 
   for (let c = 0; c <= cols; c++) {
     const x = bounds.x + c * tileSize

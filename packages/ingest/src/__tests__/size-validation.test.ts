@@ -96,8 +96,9 @@ describe('validateFileSize', () => {
     const result = validateFileSize(files)
 
     expect(result.valid).toBe(false)
-    expect(result.errors.length).toBe(1)
-    expect(result.errors[0]).toContain('maximum file size')
+    // May include both "maximum file size" and "total upload size" errors
+    expect(result.errors.length).toBeGreaterThanOrEqual(1)
+    expect(result.errors.some(e => e.includes('maximum file size'))).toBe(true)
   })
 
   it('warns when total size exceeds 20MB', () => {
@@ -183,9 +184,10 @@ describe('validateUncompressedSize', () => {
     expect(result.warnings).toEqual([])
   })
 
-  it('is always valid (soft limit only)', () => {
+  it('rejects content exceeding hard limit', () => {
     const result = validateUncompressedSize(100 * 1024 * 1024)
-    expect(result.valid).toBe(true)
-    expect(result.errors).toEqual([])
+    // 100MB exceeds the 40MB hard limit → errors produced
+    expect(result.valid).toBe(false)
+    expect(result.errors.length).toBeGreaterThanOrEqual(1)
   })
 })

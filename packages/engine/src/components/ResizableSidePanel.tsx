@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { ScrollArea, ScrollBar } from '@multiverse/ui'
 
 const MIN_WIDTH = 256
 const DEFAULT_WIDTH = 320
@@ -68,12 +69,12 @@ export function ResizableSidePanel({ children, className }: ResizableSidePanelPr
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-      >
-        {/* Pill-shaped grip indicator — subtle capsule centered vertically */}
-        <div className="w-1 h-6 rounded-full bg-gray-600 group-hover:bg-gray-400 transition-colors" />
-      </div>
+      />
 
-      {children}
+      <ScrollArea className="flex-1">
+        {children}
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
     </div>
   )
 }

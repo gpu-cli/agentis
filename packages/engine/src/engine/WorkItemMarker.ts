@@ -203,6 +203,19 @@ export class WorkItemMarkerManager {
     }
   }
 
+  /** Clear all markers so the next store sync recreates from fresh state */
+  reset(): void {
+    for (const marker of this.markers.values()) {
+      try {
+        this.container.removeChild(marker.container)
+        marker.container.destroy({ children: true })
+      } catch {
+        // PixiJS may already be torn down — safe to ignore
+      }
+    }
+    this.markers.clear()
+  }
+
   destroy(): void {
     this.unsubscribe?.()
     this.container.destroy({ children: true })

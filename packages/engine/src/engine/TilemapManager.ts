@@ -44,6 +44,67 @@ const TILE_SIZE = 32
 const CHUNK_SIZE = 64
 
 // ---------------------------------------------------------------------------
+// District wall geometry constants
+// ---------------------------------------------------------------------------
+
+/** Inset from the outer district bounds to the wall perimeter */
+const WALL_INSET = 6
+/** Render size for each wall / ground tile */
+const WALL_TILE_SIZE = 14
+/** Additional inner inset for ground fill and ground tile tiling */
+const GROUND_INSET = 4
+
+/**
+ * Compute the snapped wall rectangle for a district.
+ *
+ * The wall perimeter is auto-tiled at WALL_TILE_SIZE intervals. To prevent the
+ * right/bottom walls from overshooting (leaving an untiled green strip inside),
+ * we snap the width/height DOWN to the nearest multiple of WALL_TILE_SIZE.
+ *
+ * Every system that needs the "rendered district rectangle" — ground fill,
+ * wall tiles, fog-of-war reveal, selection highlight, road connections — MUST
+ * use this function so they all agree on the same geometry.
+ */
+function computeWallRect(
+  pixelPos: { x: number; y: number },
+  boundsW: number,
+  boundsH: number,
+): { x: number; y: number; w: number; h: number } {
+  const rawW = boundsW - WALL_INSET * 2
+  const rawH = boundsH - WALL_INSET * 2
+  // Snap to tile grid — matches AutotileEngine.generateWallPerimeter which
+  // uses floor(w / tileSize) * tileSize as the effective span.
+  const cols = Math.max(1, Math.floor(rawW / WALL_TILE_SIZE))
+  const rows = Math.max(1, Math.floor(rawH / WALL_TILE_SIZE))
+  const snappedW = cols * WALL_TILE_SIZE
+  const snappedH = rows * WALL_TILE_SIZE
+  return {
+    x: pixelPos.x + WALL_INSET,
+    y: pixelPos.y + WALL_INSET,
+    w: snappedW,
+    h: snappedH,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rect overlap utility — tests if a rect overlaps any rect in a list
+// ---------------------------------------------------------------------------
+
+/** Check whether rect `a` overlaps ANY rect in `obstacles`. */
+function rectsOverlap(
+  a: { x: number; y: number; w: number; h: number },
+  obstacles: { x: number; y: number; w: number; h: number }[],
+): boolean {
+  for (const b of obstacles) {
+    if (a.x < b.x + b.w && a.x + a.w > b.x &&
+        a.y < b.y + b.h && a.y + a.h > b.y) {
+      return true
+    }
+  }
+  return false
+}
+
+// ---------------------------------------------------------------------------
 // Text styles
 // ---------------------------------------------------------------------------
 
@@ -138,7 +199,7 @@ export class TilemapManager {
   private decorLayer: Container   // trees, rocks, flowers — between island and districts
   private districtLayer: Container
   private roadLayer: Container    // roads/paths between districts
-  private tileLayer: Container
+  tileLayer: Container
 
   /** Selection highlight layer — sits above fog so always visible.
    *  Updated independently of the full tilemap re-render. */
@@ -207,7 +268,9 @@ export class TilemapManager {
     this.districtLayer.zIndex = 3
     this.roadLayer = new Container()
     this.roadLayer.label = 'roads'
-    this.roadLayer.zIndex = 4
+    // Draw roads beneath district walls/ground so wall sprites remain on top
+    // at gates, but above general decorations.
+    this.roadLayer.zIndex = 2.9
     this.roadLayer.eventMode = 'none'
     this.roadLayer.interactiveChildren = false
 
@@ -270,8 +333,11 @@ export class TilemapManager {
     this.unsubscribeUI = useUIStore.subscribe((state) => {
       if (state.zoomTier !== this.currentZoomTier) {
         this.currentZoomTier = state.zoomTier
-        this.structureDirty = true // different layers shown at different zoom tiers
-        this.cacheDirty = true
+        // Zoom tier changes should not trigger structural rebuilds, which can
+        // cause non-deterministic building re-composition. Keep containers and
+        // only update zoom-dependent visibility/reconciliation.
+        this.updateBuildingVisibility()
+        this.buildingsDirty = true
       }
       // Hover change — lightweight badge update only
       if (state.hoveredEntityId !== this.currentHoveredId) {
@@ -431,6 +497,17 @@ export class TilemapManager {
     // V4: Reconcile buildings via retained map (avoids full recreation)
     this.reconcileBuildings()
     this.updateHoverBadge()
+  }
+
+  /** Toggle zoom-tier visibility without rebuilding building containers. */
+  private updateBuildingVisibility(): void {
+    const tier = this.currentZoomTier
+    const showBuildings = tier !== 'universe' && tier !== 'orbital'
+    this.buildingContainer.visible = showBuildings
+    this.tileLayer.visible = tier === 'street' || tier === 'interior'
+    if (!this.tileLayer.visible) {
+      this.tileLayer.removeChildren()
+    }
   }
 
   // =========================================================================
@@ -893,17 +970,11 @@ export class TilemapManager {
       const groundColors = GROUND_COLORS[biomeKey] ?? GROUND_COLORS.urban!
       const seed = hashString(district.id)
 
-      // We use a rectangular bounding area for the walled town
-      // with a small inset so walls don't sit right on the edge
-      const wallInset = 6
-      const wallRect = {
-        x: pos.x + wallInset,
-        y: pos.y + wallInset,
-        w: w - wallInset * 2,
-        h: h - wallInset * 2,
-      }
+      // Compute the snapped wall rect — shared geometry for walls, ground,
+      // fog reveal, selection highlight, and road connections.
+      const wallRect = computeWallRect(pos, w, h)
 
-      // Cache wall rect for selection highlights
+      // Cache wall rect for selection highlights and fog reveal
       this.districtRectCache.set(district.id, wallRect)
 
       // Also keep the organic polygon for backward compatibility
@@ -917,37 +988,23 @@ export class TilemapManager {
       groundFill.fill({ color: groundColors.base, alpha: 0.35 })
       this.districtLayer.addChild(groundFill)
 
-      // Collect building rects to avoid placing ground tiles under buildings
-      const buildingRects: { x: number; y: number; w: number; h: number }[] = []
-      for (const bld of store.buildings.values()) {
-        if (bld.district_id !== district.id) continue
-        const bp = this.worldToPixel(bld.position)
-        buildingRects.push({
-          x: bp.x - 4, y: bp.y - 12,
-          w: bld.footprint.width * TILE_SIZE + 8,
-          h: bld.footprint.height * TILE_SIZE + 24,
-        })
-      }
-      const isOnBuilding = (px: number, py: number): boolean => {
-        for (const r of buildingRects) {
-          if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return true
-        }
-        return false
-      }
+      // NOTE: Do NOT skip ground tiles under buildings. Buildings render at a
+      // higher zIndex (5) than districts (3), so they naturally occlude ground.
+      // Previously we carved holes for buildings using isOnBuilding(), but during
+      // replay building footprints change dynamically as files arrive, creating
+      // visible gaps in the ground where the initial footprint was carved.
 
-      // Tile the interior with biome-specific ground sprites
+      // Tile the interior with biome-specific ground sprites (full coverage)
       const groundTileTypes = assets.getBiomeTileTypes(biomeKey)
-      const groundTileSize = 14 // render size for ground tiles (slightly smaller than wall tiles)
       if (groundTileTypes.length > 0) {
-        const innerX = wallRect.x + 4
-        const innerY = wallRect.y + 4
-        const innerW = wallRect.w - 8
-        const innerH = wallRect.h - 8
-        for (let gx = 0; gx < innerW; gx += groundTileSize) {
-          for (let gy = 0; gy < innerH; gy += groundTileSize) {
+        const innerX = wallRect.x + GROUND_INSET
+        const innerY = wallRect.y + GROUND_INSET
+        const innerW = wallRect.w - GROUND_INSET * 2
+        const innerH = wallRect.h - GROUND_INSET * 2
+        for (let gx = 0; gx < innerW; gx += WALL_TILE_SIZE) {
+          for (let gy = 0; gy < innerH; gy += WALL_TILE_SIZE) {
             const px = innerX + gx
             const py = innerY + gy
-            if (isOnBuilding(px + groundTileSize / 2, py + groundTileSize / 2)) continue
 
             // Pick tile type deterministically based on position
             const s = seededRandom(seed + gx * 41 + gy * 67)
@@ -958,22 +1015,21 @@ export class TilemapManager {
             const groundSprite = new Sprite(tex)
             groundSprite.x = px
             groundSprite.y = py
-            groundSprite.width = groundTileSize
-            groundSprite.height = groundTileSize
+            groundSprite.width = WALL_TILE_SIZE
+            groundSprite.height = WALL_TILE_SIZE
             groundSprite.alpha = 0.45 + s * 0.2 // slight alpha variation
             this.districtLayer.addChild(groundSprite)
           }
         }
       }
 
-      // Ground detail dots — sparse accents between ground tiles (skip if tiles cover well)
+      // Ground detail dots — sparse accents between ground tiles
       const detail = new Graphics()
       const detailSpacing = 22
-      for (let dx = wallInset + 6; dx < w - wallInset - 6; dx += detailSpacing) {
-        for (let dy = wallInset + 6; dy < h - wallInset - 6; dy += detailSpacing) {
+      for (let dx = WALL_INSET + 6; dx < w - WALL_INSET - 6; dx += detailSpacing) {
+        for (let dy = WALL_INSET + 6; dy < h - WALL_INSET - 6; dy += detailSpacing) {
           const px = pos.x + dx
           const py = pos.y + dy
-          if (isOnBuilding(px, py)) continue
 
           const s = seededRandom(seed + dx * 41 + dy * 67 + 999)
           if (s > 0.7) {
@@ -987,7 +1043,6 @@ export class TilemapManager {
       this.districtLayer.addChild(detail)
 
       // ── Wall perimeter using autotiled sprites ──
-      const wallTileSize = 14 // render size for each wall tile
       const wx = wallRect.x, wy = wallRect.y
       const ww = wallRect.w, wh = wallRect.h
 
@@ -1014,7 +1069,7 @@ export class TilemapManager {
         // V2: Autotiled wall perimeter with gate positions
         const autotiledWalls = AutotileEngine.generateDistrictWalls(
           { x: wx, y: wy, w: ww, h: wh },
-          wallTileSize,
+          WALL_TILE_SIZE,
           roadIntersections,
           biomeMats.wall,
         )
@@ -1026,8 +1081,8 @@ export class TilemapManager {
           const tile = new Sprite(wallTex)
           tile.x = wt.x
           tile.y = wt.y
-          tile.width = wallTileSize
-          tile.height = wallTileSize
+          tile.width = WALL_TILE_SIZE
+          tile.height = WALL_TILE_SIZE
           tile.alpha = 0.85
           this.districtLayer.addChild(tile)
         }
@@ -1036,13 +1091,13 @@ export class TilemapManager {
         const wallTiles = BIOME_WALL_TILES[biomeKey] ?? BIOME_WALL_TILES.urban!
 
         // Top wall
-        const topWallCount = Math.max(1, Math.floor(ww / wallTileSize))
+        const topWallCount = Math.max(1, Math.floor(ww / WALL_TILE_SIZE))
         for (let i = 0; i < topWallCount; i++) {
           const tile = new Sprite(assets.getAnyTileTexture(wallTiles.h))
           tile.x = wx + i * (ww / topWallCount)
-          tile.y = wy - wallTileSize / 2
+          tile.y = wy - WALL_TILE_SIZE / 2
           tile.width = ww / topWallCount + 1
-          tile.height = wallTileSize
+          tile.height = WALL_TILE_SIZE
           tile.alpha = 0.8
           this.districtLayer.addChild(tile)
         }
@@ -1051,20 +1106,20 @@ export class TilemapManager {
         for (let i = 0; i < topWallCount; i++) {
           const tile = new Sprite(assets.getAnyTileTexture(wallTiles.h))
           tile.x = wx + i * (ww / topWallCount)
-          tile.y = wy + wh - wallTileSize / 2
+          tile.y = wy + wh - WALL_TILE_SIZE / 2
           tile.width = ww / topWallCount + 1
-          tile.height = wallTileSize
+          tile.height = WALL_TILE_SIZE
           tile.alpha = 0.8
           this.districtLayer.addChild(tile)
         }
 
         // Left wall
-        const sideWallCount = Math.max(1, Math.floor(wh / wallTileSize))
+        const sideWallCount = Math.max(1, Math.floor(wh / WALL_TILE_SIZE))
         for (let i = 0; i < sideWallCount; i++) {
           const tile = new Sprite(assets.getAnyTileTexture(wallTiles.v))
-          tile.x = wx - wallTileSize / 2
+          tile.x = wx - WALL_TILE_SIZE / 2
           tile.y = wy + i * (wh / sideWallCount)
-          tile.width = wallTileSize
+          tile.width = WALL_TILE_SIZE
           tile.height = wh / sideWallCount + 1
           tile.alpha = 0.8
           this.districtLayer.addChild(tile)
@@ -1073,16 +1128,16 @@ export class TilemapManager {
         // Right wall
         for (let i = 0; i < sideWallCount; i++) {
           const tile = new Sprite(assets.getAnyTileTexture(wallTiles.v))
-          tile.x = wx + ww - wallTileSize / 2
+          tile.x = wx + ww - WALL_TILE_SIZE / 2
           tile.y = wy + i * (wh / sideWallCount)
-          tile.width = wallTileSize
+          tile.width = WALL_TILE_SIZE
           tile.height = wh / sideWallCount + 1
           tile.alpha = 0.8
           this.districtLayer.addChild(tile)
         }
 
         // Corner towers (larger, slightly overlapping)
-        const towerSize = wallTileSize * 1.4
+        const towerSize = WALL_TILE_SIZE * 1.4
         const corners = [
           { x: wx - towerSize / 2, y: wy - towerSize / 2, key: wallTiles.tl },
           { x: wx + ww - towerSize / 2, y: wy - towerSize / 2, key: wallTiles.tr },
@@ -1108,7 +1163,7 @@ export class TilemapManager {
       // ── Internal roads from district layout ──
       if (spriteAtlas.isReady && districtLayout.roads.main.length >= 2) {
         const internalRoadTileSize = 10 // slightly smaller than inter-district roads
-        const roadMat = biomeMats.road
+        const roadMat = biomeMats.roadInternal // Use dungeon-style internal road tiles
 
         // Collect all road segments (main road + branches)
         const allSegments: { x: number; y: number }[][] = [districtLayout.roads.main]
@@ -1116,19 +1171,42 @@ export class TilemapManager {
           allSegments.push(branch)
         }
 
+        // Collect building pixel rects in this district for road-building overlap filtering
+        const districtBuildingRects: { x: number; y: number; w: number; h: number }[] = []
+        for (const bld of store.buildings.values()) {
+          if (bld.district_id !== district.id) continue
+          if (bld.health <= 0 && bld.file_count <= 0) continue
+          const bp = this.worldToPixel(bld.position)
+          districtBuildingRects.push({
+            x: bp.x,
+            y: bp.y,
+            w: bld.footprint.width * TILE_SIZE,
+            h: bld.footprint.height * TILE_SIZE,
+          })
+        }
+
         // Generate autotiled road grid for internal roads
         const internalRoadGrid = AutotileEngine.generateRoadGrid(
           allSegments.map(seg => seg.map(p => ({
             // Road waypoints are in tile coordinates relative to wall rect,
             // convert to pixel coordinates
-            x: p.x * wallTileSize,
-            y: p.y * wallTileSize,
+            x: p.x * WALL_TILE_SIZE,
+            y: p.y * WALL_TILE_SIZE,
           }))),
           internalRoadTileSize,
         )
 
         for (const [, rt] of internalRoadGrid) {
-          const roadTex = spriteAtlas.resolve('road', roadMat, rt.role)
+          // Skip road tiles that overlap building footprints
+          const tileRect = {
+            x: rt.x, y: rt.y,
+            w: internalRoadTileSize, h: internalRoadTileSize,
+          }
+          if (rectsOverlap(tileRect, districtBuildingRects)) continue
+
+          // Use position-based seed for deterministic variant mixing
+          const variantSeed = Math.abs(Math.round(rt.x * 7 + rt.y * 13))
+          const roadTex = spriteAtlas.resolve('road', roadMat, rt.role, variantSeed)
           const tile = new Sprite(roadTex)
           tile.x = rt.x + internalRoadTileSize / 2
           tile.y = rt.y + internalRoadTileSize / 2
@@ -1146,8 +1224,8 @@ export class TilemapManager {
         const decorTileSize = 12
         for (const decor of districtLayout.decorations) {
           // Convert decoration tile coordinates to pixel positions
-          const dx = decor.x * wallTileSize
-          const dy = decor.y * wallTileSize
+          const dx = decor.x * WALL_TILE_SIZE
+          const dy = decor.y * WALL_TILE_SIZE
 
           // Only render if inside the wall rect
           if (dx >= wx && dx < wx + ww && dy >= wy && dy < wy + wh) {
@@ -1212,7 +1290,7 @@ export class TilemapManager {
           const badgeText = `${avgHealth}%`
           const badge = new Text({ text: badgeText, style: badgeStyle })
           const bx = cx - badge.width / 2
-          const by = wy - wallTileSize / 2 - badge.height - 8
+          const by = wy - WALL_TILE_SIZE / 2 - badge.height - 8
 
           const badgeBg = new Graphics()
           badgeBg.roundRect(bx - 6, by - 3, badge.width + 12, badge.height + 6, 4)
@@ -1329,41 +1407,184 @@ export class TilemapManager {
    *   2. Travel horizontal or vertical
    *   3. Make a right-angle turn
    *   4. Enter the nearest edge of district 2
+   *
+   * Roads are clipped so they never render on top of district interiors or
+   * buildings. Only tiles in the gap between districts are drawn.
    */
   private renderRoad(
     d1: District, d2: District, _biome: string,
     connectionType: string = 'general', connectionLabel?: string,
   ): void {
     const assets = AssetLoader.instance
-    const roadTileSize = 12 // render size for each road tile (smaller than TILE_SIZE for a path feel)
+    const store = useUniverseStore.getState()
+    // Use the wall tile size for road tiles so the connector width exactly
+    // matches the gate aperture carved in the wall perimeter.
+    const roadTileSize = WALL_TILE_SIZE
 
-    // District bounding boxes in pixel space
+    // District wall rectangles in pixel space — use the same snapped geometry
+    // as renderDistricts so roads connect to the actual wall edges.
     const p1 = this.worldToPixel(d1.position)
     const p2 = this.worldToPixel(d2.position)
-    const r1 = {
-      x: p1.x, y: p1.y,
-      w: d1.bounds.width * TILE_SIZE, h: d1.bounds.height * TILE_SIZE,
-    }
-    const r2 = {
-      x: p2.x, y: p2.y,
-      w: d2.bounds.width * TILE_SIZE, h: d2.bounds.height * TILE_SIZE,
+    const r1 = computeWallRect(p1, d1.bounds.width * TILE_SIZE, d1.bounds.height * TILE_SIZE)
+    const r2 = computeWallRect(p2, d2.bounds.width * TILE_SIZE, d2.bounds.height * TILE_SIZE)
+
+    // Prefer gate‑aligned exits so the connector meets the carved wall gate
+    // openings. Fallback to overlap-aware exits when gates are unavailable.
+    const chooseGateAlignedExits = (): [{ x: number; y: number }, { x: number; y: number }] | null => {
+      try {
+        const layout1 = this.getDistrictLayout(d1, r1)
+        const layout2 = this.getDistrictLayout(d2, r2)
+        const c1x = r1.x + r1.w / 2, c1y = r1.y + r1.h / 2
+        const c2x = r2.x + r2.w / 2, c2y = r2.y + r2.h / 2
+        const horiz = Math.abs(c2x - c1x) >= Math.abs(c2y - c1y)
+
+        if (horiz) {
+          const leftIsD1 = c1x < c2x
+          const d1Side: 'e' | 'w' = leftIsD1 ? 'e' : 'w'
+          const d2Side: 'e' | 'w' = leftIsD1 ? 'w' : 'e'
+          const g1s = layout1.gates.filter(g => g.direction === d1Side)
+          const g2s = layout2.gates.filter(g => g.direction === d2Side)
+          if (g1s.length && g2s.length) {
+            const targetY = leftIsD1 ? c2y : c1y
+            const g1 = g1s.reduce((best, g) => Math.abs(g.y - targetY) < Math.abs(best.y - targetY) ? g : best)
+            const g2 = g2s.reduce((best, g) => Math.abs(g.y - targetY) < Math.abs(best.y - targetY) ? g : best)
+            const e1x = leftIsD1 ? r1.x + r1.w : r1.x
+            const e2x = leftIsD1 ? r2.x : r2.x + r2.w
+            return [{ x: e1x, y: g1.y }, { x: e2x, y: g2.y }]
+          }
+        } else {
+          const topIsD1 = c1y < c2y
+          const d1Side: 'n' | 's' = topIsD1 ? 's' : 'n'
+          const d2Side: 'n' | 's' = topIsD1 ? 'n' : 's'
+          const g1s = layout1.gates.filter(g => g.direction === d1Side)
+          const g2s = layout2.gates.filter(g => g.direction === d2Side)
+          if (g1s.length && g2s.length) {
+            const targetX = topIsD1 ? c2x : c1x
+            const g1 = g1s.reduce((best, g) => Math.abs(g.x - targetX) < Math.abs(best.x - targetX) ? g : best)
+            const g2 = g2s.reduce((best, g) => Math.abs(g.x - targetX) < Math.abs(best.x - targetX) ? g : best)
+            const e1y = topIsD1 ? r1.y + r1.h : r1.y
+            const e2y = topIsD1 ? r2.y : r2.y + r2.h
+            return [{ x: g1.x, y: e1y }, { x: g2.x, y: e2y }]
+          }
+        }
+      } catch { /* ignore and fall back */ }
+      return null
     }
 
-    // Centers
-    const c1x = r1.x + r1.w / 2, c1y = r1.y + r1.h / 2
-    const c2x = r2.x + r2.w / 2, c2y = r2.y + r2.h / 2
-
-    // Compute exit points on the edge of each district's bounding box
-    const exit1 = this.computeEdgeExit(r1, c2x, c2y)
-    const exit2 = this.computeEdgeExit(r2, c1x, c1y)
+    // Compute exit points using gate alignment when possible; otherwise fall back
+    // to overlap-aware logic for straighter roads.
+    const gateExits = chooseGateAlignedExits()
+    const [exit1, exit2] = gateExits ?? this.computeSmartExits(r1, r2)
 
     // Build L-shaped waypoint path with right-angle turn
-    const waypoints = this.computeRoadWaypoints(exit1.x, exit1.y, exit2.x, exit2.y)
+    let waypoints = this.computeRoadWaypoints(exit1.x, exit1.y, exit2.x, exit2.y)
+
+    // Nudge the first and last waypoint outward by half a road tile so
+    // stamped tiles do not bleed into the interior of the two endpoint
+    // districts. This keeps the connector visually flush with the walls
+    // without drawing inside them (see Team research demo overlap bug).
+    // Account for wall thickness: walls are rendered centered on the wallRect
+    // edge and extend WALL_TILE_SIZE/2 outside the rect. To avoid drawing road
+    // tiles over the wall sprites, push the endpoints by roadHalf + wallHalf.
+    const roadHalf = roadTileSize / 2
+    const wallHalf = WALL_TILE_SIZE / 2
+    // Keep start/end close to the gate so the first/last tile can overlap the
+    // gate aperture slightly (roads render below walls). This avoids a visible
+    // gap without painting into the district interior.
+    const endpointPad = Math.max(0, roadHalf - 1)
+    if (waypoints.length >= 2) {
+      // Adjust start → move away from the wall along the first segment axis
+      const sdx = waypoints[1]!.x - waypoints[0]!.x
+      const sdy = waypoints[1]!.y - waypoints[0]!.y
+      if (Math.abs(sdx) >= Math.abs(sdy)) {
+        // Horizontal first segment
+        const span = Math.abs(sdx)
+        const pad = Math.min(endpointPad, Math.max(0, span / 2 - 0.5))
+        waypoints[0]!.x += Math.sign(sdx || 1) * pad
+      } else {
+        // Vertical first segment
+        const span = Math.abs(sdy)
+        const pad = Math.min(endpointPad, Math.max(0, span / 2 - 0.5))
+        waypoints[0]!.y += Math.sign(sdy || 1) * pad
+      }
+
+      // Adjust end → move away from the wall along the last segment axis
+      const last = waypoints.length - 1
+      const edx = waypoints[last]!.x - waypoints[last - 1]!.x
+      const edy = waypoints[last]!.y - waypoints[last - 1]!.y
+      if (Math.abs(edx) >= Math.abs(edy)) {
+        const span = Math.abs(edx)
+        const pad = Math.min(endpointPad, Math.max(0, span / 2 - 0.5))
+        waypoints[last]!.x -= Math.sign(edx || 1) * pad
+      } else {
+        const span = Math.abs(edy)
+        const pad = Math.min(endpointPad, Math.max(0, span / 2 - 0.5))
+        waypoints[last]!.y -= Math.sign(edy || 1) * pad
+      }
+    }
+
+    // Compute gate slots at each endpoint: a rectangular aperture through the
+    // wall where tiles are allowed to render. Anywhere the road overlaps the
+    // endpoint wall OUTSIDE this slot is skipped.
+    const startIsHorizontal = Math.abs(waypoints[1]!.x - waypoints[0]!.x) >= Math.abs(waypoints[1]!.y - waypoints[0]!.y)
+    const endIsHorizontal = Math.abs(waypoints[waypoints.length - 1]!.x - waypoints[waypoints.length - 2]!.x) >=
+                            Math.abs(waypoints[waypoints.length - 1]!.y - waypoints[waypoints.length - 2]!.y)
+    const makeGateSlot = (
+      wall: { x: number; y: number; w: number; h: number },
+      exit: { x: number; y: number },
+      horiz: boolean,
+    ): { x: number; y: number; w: number; h: number } => {
+      if (horiz) {
+        // Horizontal road passes through a vertical wall: slot spans wall thickness in X
+        const isRight = Math.abs(exit.x - (wall.x + wall.w)) < 2
+        const gapExtend = roadHalf + 2 // extend into the gap so near-edge tiles are allowed
+        return {
+          x: (isRight ? (wall.x + wall.w - wallHalf) : (wall.x - wallHalf - gapExtend)),
+          y: exit.y - roadHalf,
+          w: WALL_TILE_SIZE + (isRight ? gapExtend : gapExtend),
+          h: roadTileSize,
+        }
+      } else {
+        // Vertical road passes through a horizontal wall: slot spans wall thickness in Y
+        const isBottom = Math.abs(exit.y - (wall.y + wall.h)) < 2
+        const gapExtend = roadHalf + 2
+        return {
+          x: exit.x - roadHalf,
+          y: (isBottom ? (wall.y + wall.h - wallHalf) : (wall.y - wallHalf - gapExtend)),
+          w: roadTileSize,
+          h: WALL_TILE_SIZE + (isBottom ? gapExtend : gapExtend),
+        }
+      }
+    }
+    const gateSlot1 = makeGateSlot(r1, exit1, startIsHorizontal)
+    const gateSlot2 = makeGateSlot(r2, exit2, endIsHorizontal)
 
     // Pick road tile key and border color based on connection type
     const roadStyle = CONNECTION_ROAD_STYLES[connectionType] ?? CONNECTION_ROAD_STYLES.general!
 
+    // Collect obstacle rects: third-party district wall rects + building footprints.
+    // Exclude the two endpoint districts (d1, d2) so road tiles can reach
+    // right up to their walls and visually span the gap.
+    const obstacleRects: { x: number; y: number; w: number; h: number }[] = []
+    for (const dist of store.districts.values()) {
+      if (dist.id === d1.id || dist.id === d2.id) continue
+      const dp = this.worldToPixel(dist.position)
+      const dr = computeWallRect(dp, dist.bounds.width * TILE_SIZE, dist.bounds.height * TILE_SIZE)
+      obstacleRects.push(dr)
+    }
+    for (const bld of store.buildings.values()) {
+      if (bld.health <= 0 && bld.file_count <= 0) continue
+      const bp = this.worldToPixel(bld.position)
+      obstacleRects.push({
+        x: bp.x,
+        y: bp.y,
+        w: bld.footprint.width * TILE_SIZE,
+        h: bld.footprint.height * TILE_SIZE,
+      })
+    }
+
     // Draw shadow underneath — single rect per segment, matching road width exactly
+    // Shadows also skip inside district rects
     const hw = roadTileSize / 2
     const shadowG = new Graphics()
     for (let w = 0; w < waypoints.length - 1; w++) {
@@ -1372,23 +1593,43 @@ export class TilemapManager {
       if (Math.abs(bx - ax) > Math.abs(by - ay)) {
         const minX = Math.min(ax, bx)
         const segLen = Math.abs(bx - ax)
-        shadowG.rect(minX + 2, ay - hw + 2, segLen, roadTileSize)
+        const segRect = { x: minX + 2, y: ay - hw + 2, w: segLen, h: roadTileSize }
+        const hitsStartWall = rectsOverlap(segRect, [r1]) && !rectsOverlap(segRect, [gateSlot1])
+        const hitsEndWall = rectsOverlap(segRect, [r2]) && !rectsOverlap(segRect, [gateSlot2])
+        if (!rectsOverlap(segRect, obstacleRects) && !hitsStartWall && !hitsEndWall) {
+          shadowG.rect(segRect.x, segRect.y, segRect.w, segRect.h)
+        }
       } else {
         const minY = Math.min(ay, by)
         const segLen = Math.abs(by - ay)
-        shadowG.rect(ax - hw + 2, minY + 2, roadTileSize, segLen)
+        const segRect = { x: ax - hw + 2, y: minY + 2, w: roadTileSize, h: segLen }
+        const hitsStartWall = rectsOverlap(segRect, [r1]) && !rectsOverlap(segRect, [gateSlot1])
+        const hitsEndWall = rectsOverlap(segRect, [r2]) && !rectsOverlap(segRect, [gateSlot2])
+        if (!rectsOverlap(segRect, obstacleRects) && !hitsStartWall && !hitsEndWall) {
+          shadowG.rect(segRect.x, segRect.y, segRect.w, segRect.h)
+        }
       }
     }
     shadowG.fill({ color: 0x000000, alpha: 0.15 })
     this.roadLayer.addChild(shadowG)
 
     if (spriteAtlas.isReady) {
-      // V2: Autotiled road rendering
-      const roadMat = resolveBiomeMaterials(_biome).road
+      // V2: Autotiled road rendering with connector material
+      const roadMat = resolveBiomeMaterials(_biome).roadConnector
       const roadGrid = AutotileEngine.generateRoadGrid([waypoints], roadTileSize)
 
       for (const [, rt] of roadGrid) {
-        const roadTex = spriteAtlas.resolve('road', roadMat, rt.role)
+        // Skip road tiles that overlap any district wall rect or building
+        const tileRect = { x: rt.x, y: rt.y, w: roadTileSize, h: roadTileSize }
+        if (rectsOverlap(tileRect, obstacleRects)) continue
+        // Block tiles if they overlap the endpoint walls outside the gate slots
+        const badAtStart = rectsOverlap(tileRect, [r1]) && !rectsOverlap(tileRect, [gateSlot1])
+        const badAtEnd = rectsOverlap(tileRect, [r2]) && !rectsOverlap(tileRect, [gateSlot2])
+        if (badAtStart || badAtEnd) continue
+
+        // Use position-based seed for deterministic variant mixing
+        const variantSeed = Math.abs(Math.round(rt.x * 7 + rt.y * 13))
+        const roadTex = spriteAtlas.resolve('road', roadMat, rt.role, variantSeed)
         const tile = new Sprite(roadTex)
         tile.x = rt.x + roadTileSize / 2
         tile.y = rt.y + roadTileSize / 2
@@ -1420,6 +1661,13 @@ export class TilemapManager {
           const tx = ax + stepX * (s + 0.5)
           const ty = ay + stepY * (s + 0.5)
 
+          // Skip tiles inside district wall rects or buildings
+          const tileRect = { x: tx - roadTileSize / 2, y: ty - roadTileSize / 2, w: roadTileSize, h: roadTileSize }
+          if (rectsOverlap(tileRect, obstacleRects)) continue
+          const badAtStart = rectsOverlap(tileRect, [r1]) && !rectsOverlap(tileRect, [gateSlot1])
+          const badAtEnd = rectsOverlap(tileRect, [r2]) && !rectsOverlap(tileRect, [gateSlot2])
+          if (badAtStart || badAtEnd) continue
+
           const tile = new Sprite(roadTex)
           tile.width = roadTileSize
           tile.height = roadTileSize
@@ -1433,12 +1681,29 @@ export class TilemapManager {
     }
 
     // Draw border lines along road edges for definition (color per connection type)
+    // Also skip borders inside district rects
     const borderG = new Graphics()
     const borderColor = darken(roadStyle.borderColor, 0.15)
     const bHw = hw + 1 // border half-width = road half-width + 1px for border offset
     for (let w = 0; w < waypoints.length - 1; w++) {
       const ax = waypoints[w]!.x, ay = waypoints[w]!.y
       const bx = waypoints[w + 1]!.x, by = waypoints[w + 1]!.y
+
+      // Check if the segment center is inside an obstacle — skip entirely if so
+      const midX = (ax + bx) / 2
+      const midY = (ay + by) / 2
+      const midRect = { x: midX - 1, y: midY - 1, w: 2, h: 2 }
+      if (rectsOverlap(midRect, obstacleRects)) continue
+      // Skip drawing borders that would overlap endpoint walls outside gates
+      const segRect = {
+        x: Math.min(ax, bx),
+        y: Math.min(ay, by),
+        w: Math.abs(bx - ax) || 1,
+        h: Math.abs(by - ay) || 1,
+      }
+      const hitsStartWall = rectsOverlap(segRect, [r1]) && !rectsOverlap(segRect, [gateSlot1])
+      const hitsEndWall = rectsOverlap(segRect, [r2]) && !rectsOverlap(segRect, [gateSlot2])
+      if (hitsStartWall || hitsEndWall) continue
 
       if (Math.abs(bx - ax) > Math.abs(by - ay)) {
         // Horizontal — draw top and bottom border lines
@@ -1460,39 +1725,134 @@ export class TilemapManager {
     }
     this.roadLayer.addChild(borderG)
 
-    // Road label at the midpoint (for labeled connections)
+    // Road label at the midpoint — only if outside obstacles
     const displayLabel = connectionLabel ?? roadStyle.label
     if (displayLabel) {
-      // Find midpoint of the road
-      const totalLen = waypoints.reduce((sum, wp, i) => {
-        if (i === 0) return 0
-        const prev = waypoints[i - 1]!
-        return sum + Math.sqrt((wp.x - prev.x) ** 2 + (wp.y - prev.y) ** 2)
-      }, 0)
-      let target = totalLen / 2
-      let mx = waypoints[0]!.x, my = waypoints[0]!.y
-      for (let i = 1; i < waypoints.length; i++) {
-        const prev = waypoints[i - 1]!
-        const cur = waypoints[i]!
-        const segLen = Math.sqrt((cur.x - prev.x) ** 2 + (cur.y - prev.y) ** 2)
-        if (target <= segLen) {
-          const t = target / segLen
-          mx = prev.x + (cur.x - prev.x) * t
-          my = prev.y + (cur.y - prev.y) * t
-          break
+      // Robust centering: pick the segment that actually spans the
+      // inter‑district gap and center the label on that segment.
+      // This avoids drift from endpoint padding or small L‑bends.
+      let mx: number | null = null
+      let my: number | null = null
+      const gapLeftX = Math.min(r1.x + r1.w, r2.x + r2.w)
+      const gapRightX = Math.max(r1.x, r2.x)
+      const gapTopY = Math.min(r1.y + r1.h, r2.y + r2.h)
+      const gapBottomY = Math.max(r1.y, r2.y)
+
+      let bestLen = -1
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        const ax = waypoints[i]!.x, ay = waypoints[i]!.y
+        const bx = waypoints[i + 1]!.x, by = waypoints[i + 1]!.y
+        if (Math.abs(bx - ax) >= Math.abs(by - ay)) {
+          // Horizontal segment — intersect with horizontal gap band
+          const segMin = Math.min(ax, bx)
+          const segMax = Math.max(ax, bx)
+          const ix0 = Math.max(segMin, gapLeftX)
+          const ix1 = Math.min(segMax, gapRightX)
+          const ilen = ix1 - ix0
+          if (ilen > bestLen) {
+            bestLen = ilen
+            if (ilen > 0) { mx = (ix0 + ix1) / 2; my = ay }
+          }
+        } else {
+          // Vertical segment — intersect with vertical gap band
+          const segMin = Math.min(ay, by)
+          const segMax = Math.max(ay, by)
+          const iy0 = Math.max(segMin, gapTopY)
+          const iy1 = Math.min(segMax, gapBottomY)
+          const ilen = iy1 - iy0
+          if (ilen > bestLen) {
+            bestLen = ilen
+            if (ilen > 0) { mx = ax; my = (iy0 + iy1) / 2 }
+          }
         }
-        target -= segLen
       }
-      const roadLabel = new Text({ text: displayLabel, style: fileLabelStyle })
-      const rlBg = new Graphics()
-      rlBg.roundRect(mx - roadLabel.width / 2 - 3, my - roadLabel.height / 2 - 2, roadLabel.width + 6, roadLabel.height + 4, 3)
-      rlBg.fill({ color: 0x000000, alpha: 0.5 })
-      this.labelContainer.addChild(rlBg)
-      roadLabel.x = mx - roadLabel.width / 2
-      roadLabel.y = my - roadLabel.height / 2
-      roadLabel.alpha = 0.8
-      this.labelContainer.addChild(roadLabel)
+
+      // Fallback to path midpoint if we didn't find a crossing segment
+      if (mx === null || my === null) {
+        const totalLen = waypoints.reduce((sum, wp, i) => {
+          if (i === 0) return 0
+          const prev = waypoints[i - 1]!
+          return sum + Math.sqrt((wp.x - prev.x) ** 2 + (wp.y - prev.y) ** 2)
+        }, 0)
+        let target = totalLen / 2
+        mx = waypoints[0]!.x
+        my = waypoints[0]!.y
+        for (let i = 1; i < waypoints.length; i++) {
+          const prev = waypoints[i - 1]!
+          const cur = waypoints[i]!
+          const segLen = Math.sqrt((cur.x - prev.x) ** 2 + (cur.y - prev.y) ** 2)
+          if (target <= segLen) {
+            const t = target / segLen
+            mx = prev.x + (cur.x - prev.x) * t
+            my = prev.y + (cur.y - prev.y) * t
+            break
+          }
+          target -= segLen
+        }
+      }
+
+      // Only show label if it's not inside an obstacle
+      const labelRect = { x: mx - 18, y: my - 9, w: 36, h: 18 }
+      if (!rectsOverlap(labelRect, obstacleRects)) {
+        const roadLabel = new Text({ text: displayLabel, style: fileLabelStyle })
+        const rlBg = new Graphics()
+        // Precisely center background and text on computed midpoint
+        rlBg.roundRect(mx - roadLabel.width / 2 - 3, my - roadLabel.height / 2, roadLabel.width + 6, roadLabel.height + 4, 3)
+        rlBg.fill({ color: 0x000000, alpha: 0.5 })
+        this.labelContainer.addChild(rlBg)
+        roadLabel.x = mx - roadLabel.width / 2
+        roadLabel.y = my - roadLabel.height / 2
+        roadLabel.alpha = 0.8
+        this.labelContainer.addChild(roadLabel)
+      }
     }
+  }
+
+  /**
+   * Compute exit points for a road between two district rects.
+   * Uses the overlapping range on the perpendicular axis so side-by-side
+   * districts get a straight horizontal (or vertical) bridge instead of
+   * an L-shaped detour caused by differing centers.
+   * Falls back to center-targeting (computeEdgeExit) when the rects
+   * don't overlap on the perpendicular axis.
+   */
+  private computeSmartExits(
+    r1: { x: number; y: number; w: number; h: number },
+    r2: { x: number; y: number; w: number; h: number },
+  ): [{ x: number; y: number }, { x: number; y: number }] {
+    const c1x = r1.x + r1.w / 2, c1y = r1.y + r1.h / 2
+    const c2x = r2.x + r2.w / 2, c2y = r2.y + r2.h / 2
+    const dx = Math.abs(c2x - c1x)
+    const dy = Math.abs(c2y - c1y)
+
+    if (dx >= dy) {
+      // Districts are primarily separated horizontally — check Y overlap
+      const overlapMinY = Math.max(r1.y, r2.y)
+      const overlapMaxY = Math.min(r1.y + r1.h, r2.y + r2.h)
+      if (overlapMaxY > overlapMinY) {
+        const sharedY = (overlapMinY + overlapMaxY) / 2
+        // Exit on facing edges at the shared Y
+        const e1x = c1x < c2x ? r1.x + r1.w : r1.x
+        const e2x = c1x < c2x ? r2.x : r2.x + r2.w
+        return [{ x: e1x, y: sharedY }, { x: e2x, y: sharedY }]
+      }
+    } else {
+      // Districts are primarily separated vertically — check X overlap
+      const overlapMinX = Math.max(r1.x, r2.x)
+      const overlapMaxX = Math.min(r1.x + r1.w, r2.x + r2.w)
+      if (overlapMaxX > overlapMinX) {
+        const sharedX = (overlapMinX + overlapMaxX) / 2
+        const e1y = c1y < c2y ? r1.y + r1.h : r1.y
+        const e2y = c1y < c2y ? r2.y : r2.y + r2.h
+        return [{ x: sharedX, y: e1y }, { x: sharedX, y: e2y }]
+      }
+    }
+
+    // No overlap — fall back to center-targeting
+    return [
+      this.computeEdgeExit(r1, c2x, c2y),
+      this.computeEdgeExit(r2, c1x, c1y),
+    ]
   }
 
   /**
@@ -1863,13 +2223,7 @@ export class TilemapManager {
   private reconcileBuildings(): void {
     const store = useUniverseStore.getState()
     const tier = this.currentZoomTier
-
-    // At universe/orbital zoom, hide all buildings
-    if (tier === 'universe' || tier === 'orbital') {
-      // Detach but keep in map (they'll be re-attached when zooming in)
-      this.buildingContainer.removeChildren()
-      return
-    }
+    const showBuildings = tier !== 'universe' && tier !== 'orbital'
 
     // Detach all from display list (map still holds references)
     this.buildingContainer.removeChildren()
@@ -1890,14 +2244,18 @@ export class TilemapManager {
           const existing = this.buildingMap.get(building.id)
           if (existing && existing.health === -1) {
             // Already showing planned outline — re-attach
-            this.buildingContainer.addChild(existing.container)
+            if (showBuildings) {
+              this.buildingContainer.addChild(existing.container)
+            }
           } else {
             // Create planned outline container
             if (existing) {
               existing.container.destroy({ children: true })
             }
             const container = this.createPlannedOutline(building)
-            this.buildingContainer.addChild(container)
+            if (showBuildings) {
+              this.buildingContainer.addChild(container)
+            }
             this.buildingMap.set(building.id, {
               container,
               health: -1, // Sentinel for "planned outline" state
@@ -1920,7 +2278,9 @@ export class TilemapManager {
           // Stats changed — rebuild this building's container
           existing.container.destroy({ children: true })
           const container = this.createBuildingContainer(building)
-          this.buildingContainer.addChild(container)
+          if (showBuildings) {
+            this.buildingContainer.addChild(container)
+          }
           this.buildingMap.set(building.id, {
             container,
             health: building.health,
@@ -1928,12 +2288,16 @@ export class TilemapManager {
           })
         } else {
           // Unchanged — just re-attach to display list
-          this.buildingContainer.addChild(existing.container)
+          if (showBuildings) {
+            this.buildingContainer.addChild(existing.container)
+          }
         }
       } else {
         // New building
         const container = this.createBuildingContainer(building)
-        this.buildingContainer.addChild(container)
+        if (showBuildings) {
+          this.buildingContainer.addChild(container)
+        }
         this.buildingMap.set(building.id, {
           container,
           health: building.health,
@@ -1941,6 +2305,8 @@ export class TilemapManager {
         })
       }
     }
+
+    this.updateBuildingVisibility()
 
     // Tile overlays (street/interior zoom)
     if (tier === 'street' || tier === 'interior') {
@@ -1984,7 +2350,7 @@ export class TilemapManager {
       this.buildingContainer.removeChild(existing.container)
       existing.container.destroy({ children: true })
 
-      if (update.health <= 0) {
+      if (update.health <= 0 && update.fileCount <= 0) {
         this.buildingMap.delete(id)
         continue
       }
@@ -2051,6 +2417,10 @@ export class TilemapManager {
     const assets = AssetLoader.instance
 
     for (const tile of tiles.values()) {
+      // Complete tiles don't need an overlay — the building composition already
+      // represents them. Only show overlays for in-progress / damaged states.
+      if (tile.state === 'complete') continue
+
       const building = buildings.get(tile.building_id)
       if (!building) continue
 
@@ -2064,6 +2434,7 @@ export class TilemapManager {
       tileSprite.y = ty + 1
       tileSprite.width = TILE_SIZE - 2
       tileSprite.height = TILE_SIZE - 2
+      tileSprite.alpha = 0.6
       this.tileLayer.addChild(tileSprite)
     }
   }
@@ -2142,13 +2513,8 @@ export class TilemapManager {
         const pos = this.worldToPixel(district.position)
         const w = district.bounds.width * TILE_SIZE
         const h = district.bounds.height * TILE_SIZE
-        const wallInset = 6
-        rect = {
-          x: pos.x + wallInset,
-          y: pos.y + wallInset,
-          w: w - wallInset * 2,
-          h: h - wallInset * 2,
-        }
+        // Use the same snapped geometry as renderDistricts
+        rect = computeWallRect(pos, w, h)
       }
 
       // ── Universal high-contrast highlight ──
@@ -2243,6 +2609,30 @@ export class TilemapManager {
   markDirty(): void {
     this.structureDirty = true
     this.cacheDirty = true
+  }
+
+  /** Clear all caches and retained state, then trigger a full re-render.
+   *  Unlike destroy(), this keeps containers alive for reuse. */
+  reset(): void {
+    this.coastlineCache.clear()
+    this.islandBoundsCache.clear()
+    this.districtPolyCache.clear()
+    this.districtRectCache.clear()
+    this.districtLayoutCache.clear()
+    this.buildingTints.clear()
+    this.pendingBuildingUpdates.clear()
+    // Destroy retained building containers (they'll be recreated on next render)
+    for (const entry of this.buildingMap.values()) {
+      try {
+        entry.container.destroy({ children: true })
+      } catch {
+        // PixiJS may already be torn down — safe to ignore
+      }
+    }
+    this.buildingMap.clear()
+    this.hoverBadgeObjects = null
+    this.markDirty()
+    this.buildingsDirty = true
   }
 
   destroy(): void {

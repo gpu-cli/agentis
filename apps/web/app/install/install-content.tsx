@@ -148,19 +148,15 @@ export function InstallContent() {
           {/* Install */}
           <Section title="Get Started">
             <div className="space-y-2">
-              <CodeBlock>{`git clone ${AGENTIS_REPO_URL}.git && cd agentis && pnpm install`}</CodeBlock>
-              <CodeBlock>{"AGENTIS_LOCAL_MODE=true NEXT_PUBLIC_AGENTIS_LOCAL=true NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true pnpm dev"}</CodeBlock>
+              <CodeBlock>{`git clone ${AGENTIS_REPO_URL}.git`}</CodeBlock>
+              <CodeBlock>{"cd agentis && pnpm install && pnpm dev"}</CodeBlock>
             </div>
             <p className="text-xs text-gray-500 mt-3">
               Opens on{" "}
               <code className="text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
                 http://localhost:3000
               </code>
-              . Your Claude Code sessions are auto-detected from{" "}
-              <code className="text-gray-300 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
-                ~/.claude/projects/
-              </code>
-              {" "}&mdash; pick one and go.
+              . Drop in your transcripts and go.
             </p>
           </Section>
 

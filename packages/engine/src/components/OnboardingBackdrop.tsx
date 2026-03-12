@@ -73,7 +73,7 @@ export function OnboardingBackdrop() {
       // Load scenario via pipeline (async)
       let scenario: ScenarioData
       try {
-        scenario = await loadDemoScenario('incident-bad-env')
+        scenario = await loadDemoScenario('team-build')
       } catch (err) {
         console.warn('[onboarding] failed to load backdrop scenario:', err)
         return

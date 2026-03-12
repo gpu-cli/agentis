@@ -25,12 +25,15 @@ interface MonsterState {
     buildingId?: string
     workitemId?: string
     message: string
+    toolName?: string
     stackTrace?: string
   }) => void
   updateMonsterHealth: (monsterId: string, health: number) => void
   updateMonsterStatus: (monsterId: string, status: MonsterStatus) => void
   setFightingAgent: (monsterId: string, agentId: string | undefined) => void
   defeatMonster: (monsterId: string) => void
+  /** Remove a monster entirely from store (called after fade-out completes) */
+  removeMonster: (monsterId: string) => void
 }
 
 export const useMonsterStore = create<MonsterState>((set) => ({
@@ -56,6 +59,7 @@ export const useMonsterStore = create<MonsterState>((set) => ({
       health: 100,
       error_details: {
         message: params.message,
+        tool_name: params.toolName,
         stack_trace: params.stackTrace,
       },
       conversation_thread: [],
@@ -117,6 +121,14 @@ export const useMonsterStore = create<MonsterState>((set) => ({
           resolved_at: Date.now(),
         })
       }
+      return { monsters }
+    })
+  },
+
+  removeMonster: (monsterId) => {
+    set((state) => {
+      const monsters = new Map(state.monsters)
+      monsters.delete(monsterId)
       return { monsters }
     })
   },

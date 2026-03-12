@@ -206,6 +206,14 @@ export function buildWorkUnits(
     }
   }
 
+  // Step 1.6: Filter out read-only files — they were only visited, not modified.
+  // Read-only files inflate building size without representing actual construction.
+  for (const [path, acc] of fileMap) {
+    if (acc.stats.editCount === 0) {
+      fileMap.delete(path)
+    }
+  }
+
   // Step 2: Group by filesPerTile policy
   if (filesPerTile <= 1) {
     // 1:1 mapping

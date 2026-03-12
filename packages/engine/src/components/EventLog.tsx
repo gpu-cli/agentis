@@ -174,17 +174,17 @@ export function EventLog() {
                   <div className="flex items-start gap-1.5">
                     <span className="text-[10px] shrink-0 mt-0.5">{icon}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[10px] text-gray-300 leading-tight truncate">
+                      <p className="text-[10px] text-gray-300 leading-tight truncate" title={description}>
                         {description}
                       </p>
                       {toolDetail && (
-                        <p className="text-[9px] text-gray-400 font-mono leading-tight truncate mt-0.5">
+                        <p className="text-[9px] text-gray-400 font-mono leading-tight truncate mt-0.5" title={toolDetail}>
                           {toolDetail}
                         </p>
                       )}
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {location && (
-                          <span className="text-[9px] text-gray-500 truncate">
+                          <span className="text-[9px] text-gray-500 truncate" title={location}>
                             {location}
                           </span>
                         )}
@@ -195,7 +195,7 @@ export function EventLog() {
                         )}
                       </div>
                       {errorDetail && (
-                        <p className="text-[9px] text-red-400/80 leading-tight truncate mt-0.5">
+                        <p className="text-[9px] text-red-400/80 leading-tight truncate mt-0.5" title={errorDetail}>
                           {errorDetail}
                         </p>
                       )}

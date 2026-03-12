@@ -180,13 +180,13 @@ describe('buildWorkUnits', () => {
   it('creates one work unit per unique file path (1:1 mode)', () => {
     const ops: CanonicalOperation[] = [
       makeOp({ id: 'op1', targetPath: '/project/src/main.ts', kind: 'file_write' }),
-      makeOp({ id: 'op2', targetPath: '/project/src/utils.ts', kind: 'file_read' }),
+      makeOp({ id: 'op2', targetPath: '/project/src/utils.ts', kind: 'file_write' }),
       makeOp({ id: 'op3', targetPath: '/project/src/main.ts', kind: 'file_read' }),
     ]
 
     const units = buildWorkUnits(ops, 1, '/project')
 
-    expect(units.length).toBe(2) // main.ts and utils.ts
+    expect(units.length).toBe(2) // main.ts and utils.ts (both have edits)
   })
 
   it('accumulates stats per file', () => {
@@ -280,11 +280,13 @@ describe('buildWorkUnits', () => {
 
   it('counts command_run operations correctly', () => {
     const ops: CanonicalOperation[] = [
-      makeOp({ id: 'op1', targetPath: '/project/src/main.ts', kind: 'command_run' }),
+      makeOp({ id: 'op1', targetPath: '/project/src/main.ts', kind: 'file_write' }),
       makeOp({ id: 'op2', targetPath: '/project/src/main.ts', kind: 'command_run' }),
+      makeOp({ id: 'op3', targetPath: '/project/src/main.ts', kind: 'command_run' }),
     ]
 
     const units = buildWorkUnits(ops, 1, '/project')
+    // File has an edit so it survives the read-only filter
     expect(units[0]!.stats.commandCount).toBe(2)
   })
 

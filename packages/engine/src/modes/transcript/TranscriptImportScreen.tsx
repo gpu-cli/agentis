@@ -1,12 +1,10 @@
 // ============================================================================
 // Transcript Import Screen — Upload flow for transcript mode
-//
-// Two-section layout:
-// 1. Auto-detected sessions (when local mode is available)
-// 2. Manual upload (Files / Folder / Zip) — always available as fallback
+// (Based on OnboardingScreen, but without "Skip for Demo" button)
+// Supports Files / Folder / Zip import modes with progress + warnings
 // ============================================================================
 
-import { useCallback, useMemo, useState, type ChangeEventHandler, type DragEvent } from 'react'
+import { useCallback, useMemo, useRef, useState, type ChangeEventHandler, type DragEvent } from 'react'
 import { OnboardingBackdrop } from '../../components/OnboardingBackdrop'
 import { useLocalSessions } from '../../hooks/useLocalSessions'
 import { fetchSessionFiles, reconstructFiles } from './localSessionImport'
@@ -22,30 +20,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function formatRelativeTime(isoDate: string): string {
-  const now = Date.now()
-  const then = new Date(isoDate).getTime()
-  const diffMs = now - then
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours}h ago`
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 30) return `${diffDays}d ago`
-  return new Date(isoDate).toLocaleDateString()
-}
-
-/** Detect browser support for the webkitdirectory attribute */
-const supportsFolder =
-  typeof HTMLInputElement !== 'undefined' &&
-  'webkitdirectory' in HTMLInputElement.prototype
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type ImportMode = 'files' | 'folder' | 'zip'
+type ImportMode = 'files' | 'zip'
 
 interface TranscriptImportScreenProps {
   onImport: (projectName: string, files: File[]) => Promise<boolean>
@@ -71,6 +50,20 @@ interface TranscriptImportScreenProps {
   showPreview?: boolean
 }
 
+function formatRelativeTime(isoDate: string): string {
+  const now = Date.now()
+  const then = new Date(isoDate).getTime()
+  const diffMs = now - then
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return 'just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 30) return `${diffDays}d ago`
+  return new Date(isoDate).toLocaleDateString()
+}
+
 // ---------------------------------------------------------------------------
 // Auto-Detected Sessions Panel
 // ---------------------------------------------------------------------------
@@ -88,43 +81,31 @@ function AutoDetectedPanel({
   onLoadSession: (session: LocalSessionSummary) => void
   loadingSessionId: string | null
 }) {
-  // Don't render anything if local mode is not available and not loading
   if (!isLoading && !isLocalAvailable) return null
 
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-3">
         <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
-        <h2 className="text-xs uppercase tracking-wide text-gray-400">
-          Auto-detected sessions
-        </h2>
+        <h2 className="text-xs uppercase tracking-wide text-gray-400">Auto-detected sessions</h2>
       </div>
-
       {isLoading && (
         <div className="bg-gray-950/40 border border-gray-700/50 rounded-lg p-4 text-center">
-          <span className="text-xs text-gray-500 animate-pulse">
-            Scanning for Claude Code transcripts...
-          </span>
+          <span className="text-xs text-gray-500 animate-pulse">Scanning for Claude Code transcripts...</span>
         </div>
       )}
-
       {!isLoading && isLocalAvailable && sessions.length === 0 && (
         <div className="bg-gray-950/40 border border-gray-700/50 rounded-lg p-4">
           <div className="text-xs text-gray-500 text-center">
-            No sessions found in{' '}
-            <code className="text-gray-400 bg-gray-800 px-1 py-0.5 rounded text-[10px]">
-              ~/.claude/projects/
-            </code>
+            No sessions found in <code className="text-gray-400 bg-gray-800 px-1 py-0.5 rounded text-[10px]">~/.claude/projects/</code>
           </div>
           <div className="text-[10px] text-gray-600 text-center mt-1">
             Run a Claude Code session first, then refresh this page.
           </div>
         </div>
       )}
-
       {!isLoading && sessions.length > 0 && (
         <div className="space-y-1.5">
-          {/* Load Latest — prominent CTA for the newest session */}
           <button
             onClick={() => sessions[0] && onLoadSession(sessions[0])}
             disabled={loadingSessionId !== null}
@@ -133,16 +114,12 @@ function AutoDetectedPanel({
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm text-green-300 font-medium group-hover:text-green-200">
-                  {loadingSessionId === sessions[0]?.sessionId
-                    ? 'Loading...'
-                    : 'Load latest session'}
+                  {loadingSessionId === sessions[0]?.sessionId ? 'Loading...' : 'Load latest session'}
                 </div>
                 <div className="text-[10px] text-gray-400 mt-0.5">
                   <span className="text-green-400/70">{sessions[0]?.project}</span>
-                  {' \u00b7 '}
-                  {formatRelativeTime(sessions[0]?.updatedAt ?? '')}
-                  {' \u00b7 '}
-                  {sessions[0] && formatBytes(sessions[0].totalBytes)}
+                  {' \u00b7 '}{formatRelativeTime(sessions[0]?.updatedAt ?? '')}
+                  {' \u00b7 '}{sessions[0] && formatBytes(sessions[0].totalBytes)}
                   {sessions[0]?.hasSubagents ? ' \u00b7 has subagents' : ''}
                 </div>
               </div>
@@ -151,14 +128,29 @@ function AutoDetectedPanel({
               </span>
             </div>
           </button>
-
-          {/* Remaining sessions (collapsed list) */}
           {sessions.length > 1 && (
-            <SessionList
-              sessions={sessions.slice(1)}
-              onLoadSession={onLoadSession}
-              loadingSessionId={loadingSessionId}
-            />
+            <div className="max-h-40 overflow-auto space-y-1">
+              {sessions.slice(1, 4).map((session) => (
+                <button
+                  key={session.sessionId}
+                  onClick={() => onLoadSession(session)}
+                  disabled={loadingSessionId !== null}
+                  className="w-full bg-gray-950/40 hover:bg-gray-800/60 border border-gray-700/40 rounded px-3 py-2 text-left transition-colors disabled:opacity-50 text-xs flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <span className="text-gray-300 truncate block">{session.project}</span>
+                    <span className="text-[10px] text-gray-500">
+                      {formatRelativeTime(session.updatedAt)}
+                      {' \u00b7 '}{session.fileCount} file{session.fileCount !== 1 ? 's' : ''}
+                      {' \u00b7 '}{formatBytes(session.totalBytes)}
+                    </span>
+                  </div>
+                  <span className="text-gray-500 hover:text-gray-300 shrink-0">
+                    {loadingSessionId === session.sessionId ? '\u23F3' : '\u25B6'}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -166,60 +158,48 @@ function AutoDetectedPanel({
   )
 }
 
-function SessionList({
-  sessions,
-  onLoadSession,
-  loadingSessionId,
-}: {
-  sessions: LocalSessionSummary[]
-  onLoadSession: (session: LocalSessionSummary) => void
-  loadingSessionId: string | null
-}) {
+// ---------------------------------------------------------------------------
+// Privacy Disclosure — expandable trust indicator
+// ---------------------------------------------------------------------------
+
+function PrivacyDisclosure() {
   const [expanded, setExpanded] = useState(false)
-  const visible = expanded ? sessions : sessions.slice(0, 3)
-  const hasMore = sessions.length > 3
+  const toggle = useCallback(() => setExpanded((v) => !v), [])
 
   return (
-    <div>
-      <div className="max-h-40 overflow-auto space-y-1">
-        {visible.map((session) => (
-          <button
-            key={session.sessionId}
-            onClick={() => onLoadSession(session)}
-            disabled={loadingSessionId !== null}
-            className="w-full bg-gray-950/40 hover:bg-gray-800/60 border border-gray-700/40 rounded px-3 py-2 text-left transition-colors disabled:opacity-50 text-xs flex items-center justify-between gap-2"
-          >
-            <div className="min-w-0">
-              <span className="text-gray-300 truncate block">{session.project}</span>
-              <span className="text-[10px] text-gray-500">
-                {formatRelativeTime(session.updatedAt)}
-                {' \u00b7 '}
-                {session.fileCount} file{session.fileCount !== 1 ? 's' : ''}
-                {' \u00b7 '}
-                {formatBytes(session.totalBytes)}
-              </span>
-            </div>
-            <span className="text-gray-500 hover:text-gray-300 shrink-0">
-              {loadingSessionId === session.sessionId ? '\u23F3' : '\u25B6'}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {hasMore && !expanded && (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 text-xs text-gray-400">
+        <span className="inline-block w-2 h-2 rounded-full bg-green-400 shrink-0" />
+        <span>100% local — nothing leaves your browser.</span>
         <button
-          onClick={() => setExpanded(true)}
-          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1 underline underline-offset-2"
+          onClick={toggle}
+          className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors ml-1"
         >
-          Show {sessions.length - 3} more sessions
+          {expanded ? 'Hide details' : 'How this works'}
         </button>
+      </div>
+      {expanded && (
+        <ul className="mt-2 ml-4 space-y-1 text-xs text-gray-500 list-disc list-outside">
+          <li>Files are parsed entirely in your browser — no data is uploaded</li>
+          <li>
+            Open source — inspect the code on{' '}
+            <a
+              href="https://github.com/gpu-cli/agentis"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+            >
+              GitHub
+            </a>
+          </li>
+        </ul>
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Main Component
+// Component
 // ---------------------------------------------------------------------------
 
 export function TranscriptImportScreen({
@@ -237,18 +217,13 @@ export function TranscriptImportScreen({
   const [importMode, setImportMode] = useState<ImportMode>('files')
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   const { sessions, isLoading: sessionsLoading, isLocalAvailable } = useLocalSessions()
-
-  const fileNames = useMemo(() => files.map((file) => file.name), [files])
-  const totalSize = useMemo(() => files.reduce((sum, f) => sum + f.size, 0), [files])
-
-  // ---- Auto-detect session load handler ----
 
   const handleLoadSession = useCallback(async (session: LocalSessionSummary) => {
     setLoadingSessionId(session.sessionId)
     setLocalError(null)
-
     try {
       const payload = await fetchSessionFiles(session.sessionId)
       const reconstructed = reconstructFiles(payload)
@@ -262,12 +237,14 @@ export function TranscriptImportScreen({
     }
   }, [onImport])
 
+  const fileNames = useMemo(() => files.map((file) => file.name), [files])
+  const totalSize = useMemo(() => files.reduce((sum, f) => sum + f.size, 0), [files])
+
   // ---- File acceptance per mode ----
 
   const isAcceptedFile = (file: File): boolean => {
     switch (importMode) {
       case 'files':
-      case 'folder':
         return file.name.endsWith('.jsonl') || file.name.endsWith('.json')
       case 'zip':
         return file.name.endsWith('.zip')
@@ -278,8 +255,6 @@ export function TranscriptImportScreen({
     switch (importMode) {
       case 'files':
         return '.jsonl,.json,application/json'
-      case 'folder':
-        return ''
       case 'zip':
         return '.zip,application/zip'
     }
@@ -298,10 +273,16 @@ export function TranscriptImportScreen({
 
   const onUpload: ChangeEventHandler<HTMLInputElement> = (event) => {
     const selected = Array.from(event.target.files ?? [])
-    // For folder mode, filter to only transcript files from the directory listing
-    const filtered = importMode === 'folder'
-      ? selected.filter((f) => f.name.endsWith('.jsonl') || f.name.endsWith('.json'))
-      : selected
+    if (selected.length > 0) {
+      setFiles((current) => mergeFiles(current, selected))
+    }
+    event.currentTarget.value = ''
+  }
+
+  const onFolderUpload: ChangeEventHandler<HTMLInputElement> = (event) => {
+    const selected = Array.from(event.target.files ?? [])
+    // Filter to only transcript files from the directory listing
+    const filtered = selected.filter((f) => f.name.endsWith('.jsonl') || f.name.endsWith('.json'))
     if (filtered.length > 0) {
       setFiles((current) => mergeFiles(current, filtered))
     }
@@ -324,30 +305,14 @@ export function TranscriptImportScreen({
     switch (importMode) {
       case 'files':
         return {
-          title: 'Drop Claude transcript files here',
-          subtitle: '.jsonl or .json transcript files',
-        }
-      case 'folder':
-        return {
-          title: 'Select a folder containing transcripts',
-          subtitle: 'Find transcripts in ~/.claude/projects/',
+          title: 'Drop transcript files here',
+          subtitle: '.jsonl or .json',
         }
       case 'zip':
         return {
-          title: 'Drop a .zip archive here',
-          subtitle: '.zip containing .jsonl/.json files',
+          title: 'Drop a .zip archive',
+          subtitle: 'containing .jsonl or .json files',
         }
-    }
-  }
-
-  const buttonLabel = (): string => {
-    switch (importMode) {
-      case 'files':
-        return 'Choose Files'
-      case 'folder':
-        return 'Choose Folder'
-      case 'zip':
-        return 'Choose Zip'
     }
   }
 
@@ -360,8 +325,9 @@ export function TranscriptImportScreen({
         <div className="mb-6">
           <h1 className="font-pixel text-lg text-green-400 mb-2">Import Transcripts</h1>
           <p className="text-sm text-gray-300">
-            Select a Claude Code session to visualize, or upload transcript files manually.
+            Select Claude transcript files to visualize.
           </p>
+          <PrivacyDisclosure />
         </div>
 
         {/* Warning banner (e.g., corrupt storage cleared) */}
@@ -378,9 +344,7 @@ export function TranscriptImportScreen({
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* Section 1: Auto-detected sessions                            */}
-        {/* ============================================================ */}
+        {/* Auto-detected sessions */}
         <AutoDetectedPanel
           sessions={sessions}
           isLoading={sessionsLoading}
@@ -389,20 +353,15 @@ export function TranscriptImportScreen({
           loadingSessionId={loadingSessionId}
         />
 
-        {/* Separator — only show when auto-detected panel is visible */}
+        {/* Separator */}
         {(sessionsLoading || isLocalAvailable) && (
           <div className="flex items-center gap-3 mb-5">
             <div className="flex-1 h-px bg-gray-700/50" />
-            <span className="text-[10px] text-gray-500 uppercase tracking-wider">
-              Or upload manually
-            </span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider">Or upload manually</span>
             <div className="flex-1 h-px bg-gray-700/50" />
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* Section 2: Manual upload (unchanged fallback)                 */}
-        {/* ============================================================ */}
         <div className="space-y-4">
           <label className="block">
             <span className="block text-xs uppercase tracking-wide text-gray-400 mb-1">Project name</span>
@@ -427,16 +386,6 @@ export function TranscriptImportScreen({
               Files
             </button>
             <button
-              onClick={() => setImportMode('folder')}
-              className={`px-3 py-1.5 text-xs rounded ${
-                importMode === 'folder'
-                  ? 'bg-green-700 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-            >
-              Folder{!supportsFolder ? ' (limited)' : ''}
-            </button>
-            <button
               onClick={() => setImportMode('zip')}
               className={`px-3 py-1.5 text-xs rounded ${
                 importMode === 'zip'
@@ -447,13 +396,6 @@ export function TranscriptImportScreen({
               Zip
             </button>
           </div>
-
-          {/* Folder mode: browser compatibility guidance */}
-          {importMode === 'folder' && !supportsFolder && (
-            <div className="text-xs text-yellow-300/70 bg-yellow-900/20 border border-yellow-800/30 rounded px-3 py-2">
-              Folder upload may not work in all browsers. Try Files or Zip mode instead.
-            </div>
-          )}
 
           {/* Drop zone */}
           <div
@@ -472,17 +414,30 @@ export function TranscriptImportScreen({
                 <div className="text-sm text-gray-200">{dzTitle}</div>
                 <div className="text-xs text-gray-500 mt-1">{dzSubtitle}</div>
               </div>
-              <label className="inline-flex items-center justify-center px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs cursor-pointer">
-                {buttonLabel()}
-                <input
-                  type="file"
-                  multiple={importMode !== 'zip'}
-                  accept={inputAccept()}
-                  className="hidden"
-                  onChange={onUpload}
-                  {...(importMode === 'folder' ? { webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement> : {})}
-                />
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center justify-center px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs cursor-pointer">
+                  {importMode === 'files' ? 'Choose Files' : 'Choose Zip'}
+                  <input
+                    type="file"
+                    multiple={importMode !== 'zip'}
+                    accept={inputAccept()}
+                    className="hidden"
+                    onChange={onUpload}
+                  />
+                </label>
+                {importMode === 'files' && (
+                  <label className="inline-flex items-center justify-center px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs cursor-pointer">
+                    Choose Folder
+                    <input
+                      ref={folderInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={onFolderUpload}
+                      {...{ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>}
+                    />
+                  </label>
+                )}
+              </div>
             </div>
 
             {fileNames.length > 0 ? (
@@ -572,7 +527,7 @@ export function TranscriptImportScreen({
               disabled={projectName.trim().length === 0 || files.length === 0 || isImporting}
               className="px-4 py-2 rounded bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
-              {isImporting ? 'Importing...' : 'Run'}
+              {isImporting ? 'Processing...' : 'Visualize'}
             </button>
           </div>
         </div>

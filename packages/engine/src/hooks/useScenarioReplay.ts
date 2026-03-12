@@ -114,6 +114,13 @@ function seededPick<T>(items: readonly T[], seed: number, offset = 0): T {
   return items[index]!
 }
 
+/** Return a deterministic jitter value in [-amount, +amount] based on seed + offset. */
+function seededJitter(seed: number, offset: number, amount: number): number {
+  // Use a different mixing constant from seededPick to avoid correlation
+  const hash = Math.abs(((seed >>> 0) + offset * 6271) % 1000)
+  return (hash / 500 - 1) * amount // maps 0..999 to roughly [-amount, +amount]
+}
+
 // ---------------------------------------------------------------------------
 // Build a complete, correctly-laid-out PlanetSnapshot from replay package
 // ---------------------------------------------------------------------------
@@ -144,27 +151,38 @@ function buildSnapshotFromReplay(input: UniversalEventsPackage): PlanetSnapshot 
     const districts = domainDistricts.get(domain.id) ?? []
     const artifacts = domainArtifacts.get(domain.id) ?? []
 
-    // Size island based on content: more districts/buildings = bigger island
+    // Size island based on district count and per-district artifact density
     const districtCount = Math.max(1, districts.length)
-    const buildingCount = artifacts.filter((a) => a.kind === 'file').length
 
     // Arrange districts in a grid to calculate island bounds
     const distCols = Math.ceil(Math.sqrt(districtCount))
     const distRows = Math.ceil(districtCount / distCols)
 
-    // Each district needs room for its buildings
-    const maxBuildingsPerDistrict = Math.max(
-      4,
-      Math.ceil(buildingCount / Math.max(1, districtCount)),
-    )
-    const bldCols = Math.min(4, Math.ceil(Math.sqrt(maxBuildingsPerDistrict)))
-    const bldRows = Math.ceil(maxBuildingsPerDistrict / bldCols)
+    // Compute per-district sizes (with jitter) so we can find max width per col / max height per row
+    const distSizes: { w: number; h: number }[] = districts.map((dist, di) => {
+      const dArtifacts = artifacts.filter((a) => a.kind === 'file' && a.districtId === dist.id)
+      const bc = Math.min(4, Math.max(2, Math.ceil(Math.sqrt(dArtifacts.length))))
+      const br = Math.max(2, Math.ceil(dArtifacts.length / bc))
+      const baseW = Math.max(MIN_DISTRICT_SIZE.width, bc * BUILDING_GAP + 4)
+      const baseH = Math.max(MIN_DISTRICT_SIZE.height, br * BUILDING_GAP + 4)
+      return {
+        w: Math.max(MIN_DISTRICT_SIZE.width, baseW + seededJitter(seed, di * 3, 2)),
+        h: Math.max(MIN_DISTRICT_SIZE.height, baseH + seededJitter(seed, di * 3 + 1, 2)),
+      }
+    })
 
-    const districtWidth = Math.max(MIN_DISTRICT_SIZE.width, bldCols * BUILDING_GAP + 4)
-    const districtHeight = Math.max(MIN_DISTRICT_SIZE.height, bldRows * BUILDING_GAP + 4)
+    // Use max district width per column and max height per row for island sizing
+    const colMaxW: number[] = Array.from({ length: distCols }, () => MIN_DISTRICT_SIZE.width)
+    const rowMaxH: number[] = Array.from({ length: distRows }, () => MIN_DISTRICT_SIZE.height)
+    distSizes.forEach((sz, i) => {
+      const col = i % distCols
+      const row = Math.floor(i / distCols)
+      colMaxW[col] = Math.max(colMaxW[col]!, sz.w)
+      rowMaxH[row] = Math.max(rowMaxH[row]!, sz.h)
+    })
 
-    const islandWidth = ISLAND_PADDING * 2 + distCols * districtWidth + (distCols - 1) * DISTRICT_GAP
-    const islandHeight = ISLAND_PADDING * 2 + distRows * districtHeight + (distRows - 1) * DISTRICT_GAP
+    const islandWidth = ISLAND_PADDING * 2 + colMaxW.reduce((s, w) => s + w, 0) + (distCols - 1) * DISTRICT_GAP
+    const islandHeight = ISLAND_PADDING * 2 + rowMaxH.reduce((s, h) => s + h, 0) + (distRows - 1) * DISTRICT_GAP
 
     // Position each island with generous spacing between them
     const islandX = 10 + domainIndex * (islandWidth + 20)
@@ -192,22 +210,45 @@ function buildSnapshotFromReplay(input: UniversalEventsPackage): PlanetSnapshot 
     const distCount = Math.max(1, islandDistricts.length)
     const cols = Math.ceil(Math.sqrt(distCount))
 
+    // Pre-compute per-district sizes with jitter
+    const rows = Math.ceil(distCount / cols)
+    const dSizes = islandDistricts.map((dist, di) => {
+      const bc = input.topology.artifacts.filter(
+        (a) => a.kind === 'file' && a.districtId === dist.id,
+      ).length
+      const bCols = Math.min(4, Math.max(2, Math.ceil(Math.sqrt(bc))))
+      const bRows = Math.max(2, Math.ceil(bc / bCols))
+      const baseW = Math.max(MIN_DISTRICT_SIZE.width, bCols * BUILDING_GAP + 4)
+      const baseH = Math.max(MIN_DISTRICT_SIZE.height, bRows * BUILDING_GAP + 4)
+      return {
+        w: Math.max(MIN_DISTRICT_SIZE.width, baseW + seededJitter(seed, di * 3, 2)),
+        h: Math.max(MIN_DISTRICT_SIZE.height, baseH + seededJitter(seed, di * 3 + 1, 2)),
+      }
+    })
+
+    // Compute max width per column and max height per row for grid alignment
+    const colWidths: number[] = Array.from({ length: cols }, () => MIN_DISTRICT_SIZE.width)
+    const rowHeights: number[] = Array.from({ length: rows }, () => MIN_DISTRICT_SIZE.height)
+    dSizes.forEach((sz, i) => {
+      const c = i % cols
+      const r = Math.floor(i / cols)
+      colWidths[c] = Math.max(colWidths[c]!, sz.w)
+      rowHeights[r] = Math.max(rowHeights[r]!, sz.h)
+    })
+
+    // Compute cumulative offsets for each col/row
+    const colOffsets = [0]
+    for (let c = 1; c < cols; c++) colOffsets.push(colOffsets[c - 1]! + colWidths[c - 1]! + DISTRICT_GAP)
+    const rowOffsets = [0]
+    for (let r = 1; r < rows; r++) rowOffsets.push(rowOffsets[r - 1]! + rowHeights[r - 1]! + DISTRICT_GAP)
+
     islandDistricts.forEach((district, distIndex) => {
       const col = distIndex % cols
       const row = Math.floor(distIndex / cols)
+      const { w: width, h: height } = dSizes[distIndex]!
 
-      // Count buildings for this district
-      const buildingCount = input.topology.artifacts.filter(
-        (a) => a.kind === 'file' && a.districtId === district.id,
-      ).length
-      const bldCols = Math.min(4, Math.max(2, Math.ceil(Math.sqrt(buildingCount))))
-      const bldRows = Math.max(2, Math.ceil(buildingCount / bldCols))
-
-      const width = Math.max(MIN_DISTRICT_SIZE.width, bldCols * BUILDING_GAP + 4)
-      const height = Math.max(MIN_DISTRICT_SIZE.height, bldRows * BUILDING_GAP + 4)
-
-      const distX = island.position.local_x + ISLAND_PADDING + col * (width + DISTRICT_GAP)
-      const distY = island.position.local_y + ISLAND_PADDING + row * (height + DISTRICT_GAP)
+      const distX = island.position.local_x + ISLAND_PADDING + colOffsets[col]!
+      const distY = island.position.local_y + ISLAND_PADDING + rowOffsets[row]!
 
       districts.push({
         id: district.id,
@@ -217,7 +258,6 @@ function buildSnapshotFromReplay(input: UniversalEventsPackage): PlanetSnapshot 
         bounds: { width, height },
         biome_override: seededPick(BIOME_OPTIONS, seed, distIndex + 100),
       })
-
     })
   }
 

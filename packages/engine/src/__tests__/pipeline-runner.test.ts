@@ -138,4 +138,100 @@ describe('runPipeline', () => {
     const result = await runPipeline('test', fileContents)
     expect(result.scenario).toBeDefined()
   })
+
+  it('processes multi-file input (main + subagent transcripts)', async () => {
+    const mainTs = '2026-01-01T00:00:00Z'
+    const subTs  = '2026-01-01T00:00:02Z'
+
+    const fileContents = [
+      {
+        name: 'main.jsonl',
+        content: [
+          JSON.stringify({
+            type: 'user',
+            ts: mainTs,
+            content: [{ type: 'text', text: 'research this topic' }],
+          }),
+          JSON.stringify({
+            type: 'assistant',
+            ts: '2026-01-01T00:00:01Z',
+            cwd: '/repo',
+            gitBranch: 'main',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu_main',
+                name: 'Write',
+                input: { file_path: '/repo/report.md', content: '# Report' },
+              },
+            ],
+          }),
+        ].join('\n'),
+      },
+      {
+        name: 'agent-sub1.jsonl',
+        content: [
+          JSON.stringify({
+            type: 'user',
+            ts: subTs,
+            content: [{ type: 'text', text: 'sub-task 1' }],
+          }),
+          JSON.stringify({
+            type: 'assistant',
+            ts: '2026-01-01T00:00:03Z',
+            cwd: '/repo',
+            gitBranch: 'main',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu_sub1',
+                name: 'Write',
+                input: { file_path: '/repo/research/topic-a.md', content: '# Topic A' },
+              },
+            ],
+          }),
+        ].join('\n'),
+      },
+    ]
+
+    const result = await runPipeline('multi-file-test', fileContents)
+
+    expect(result.scenario).toBeDefined()
+    expect(result.scenario.snapshot).toBeDefined()
+    expect(result.scenario.events).toBeInstanceOf(Array)
+    expect(result.scenario.events.length).toBeGreaterThan(0)
+
+    // Both files should have contributed operations — at least 2 tool_use events
+    const toolEvents = result.scenario.events.filter(
+      (e) => e.type === 'tool_use' || e.type === 'file_create' || e.type === 'file_edit',
+    )
+    expect(toolEvents.length).toBeGreaterThanOrEqual(2)
+
+    // Snapshot should have buildings corresponding to file paths from both files
+    const buildings = result.scenario.snapshot.buildings ?? []
+    expect(buildings.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('multi-file: resolveFixtureUrls helper returns correct URLs', async () => {
+    // Import the loader to test the registry structure
+    const { DEMO_SCENARIOS, DEMO_SCENARIO_NAMES } = await import(
+      '../modes/demo/demoScenarioLoader'
+    )
+
+    expect(DEMO_SCENARIO_NAMES).toContain('team-build')
+    expect(DEMO_SCENARIO_NAMES).toContain('refactor-rebuild')
+    expect(DEMO_SCENARIO_NAMES).toHaveLength(2)
+
+    // team-build uses fixtureFiles (multi-file)
+    const teamBuild = DEMO_SCENARIOS['team-build']
+    expect(teamBuild.fixtureFiles).toBeDefined()
+    expect(teamBuild.fixtureFiles!.length).toBeGreaterThanOrEqual(2)
+    expect(teamBuild.fixtureFiles![0]).toContain('main.jsonl')
+
+    // refactor-rebuild uses fixtureFiles (single main)
+    const refactorRebuild = DEMO_SCENARIOS['refactor-rebuild']
+    expect(refactorRebuild.fixtureFiles).toBeDefined()
+    expect(refactorRebuild.fixtureFiles!.length).toBe(1)
+    expect(refactorRebuild.fixtureFiles![0]).toContain('main.jsonl')
+  })
 })

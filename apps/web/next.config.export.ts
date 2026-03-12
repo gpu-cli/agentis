@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 /**
- * Static export configuration for @agentis/local.
+ * Static export configuration for agentis local builds.
  * 
  * Produces a fully static site in `out/` that can be served by any HTTP server.
  * No Node.js server runtime needed — all PixiJS rendering and transcript

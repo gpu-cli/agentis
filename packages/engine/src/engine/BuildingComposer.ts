@@ -5,8 +5,10 @@
 // and seed, then produces a ComposedBuilding — a 2D grid of tile role
 // assignments. The renderer resolves textures via SpriteAtlasRegistry.
 //
-// Replaces: TilemapManager.ts L1490–1796 (uniform texture stamping +
-// Graphics roofs/windows/scaffolding).
+// V2: Uses type1/type2 building kits from the atlas. Every building has:
+//   - Top row: roof tiles + chimney
+//   - Bottom row: door (centered) + wall tiles
+//   - Middle rows: standard wall tiles
 // ============================================================================
 
 import { normalizeStyle, materialAlpha } from './tile-roles'
@@ -25,17 +27,17 @@ export interface ComposedBuilding {
   height: number
   /** 2D grid of tile assignments, row-major grid[y][x] */
   grid: TileAssignment[][]
-  /** Additional decoration overlays (chimney, antenna, etc.) */
+  /** Additional decoration overlays (sign, flag, etc.) */
   overlays: OverlayAssignment[]
 }
 
 /** A single cell in the composed building grid */
 export interface TileAssignment {
-  /** Tile role key (e.g., 'wall_tl', 'door', 'tl' for roof) */
+  /** Tile role key (e.g., 'wall_left', 'door', 'roof_left', 'roof_chimney') */
   role: string
-  /** Material variant (e.g., 'brick', 'red') */
+  /** Material variant (e.g., 'type1', 'type2') */
   material: string
-  /** Family name (e.g., 'building', 'roof') */
+  /** Family name — always 'building' for kit-based rendering */
   family: string
   /** Render alpha (affected by health % and material state) */
   alpha: number
@@ -63,52 +65,34 @@ export interface OverlayAssignment {
 // ---------------------------------------------------------------------------
 
 interface StylePreset {
-  /** Roof style */
-  roof: 'peaked' | 'flat' | 'none'
-  /** Preferred wall material override (null = use biome default) */
-  wallMaterial: string | null
-  /** Preferred roof material override (null = use biome default) */
-  roofMaterial: string | null
-  /** Window density: 'dense' = every middle col, 'normal' = every other, 'sparse' = 1 per row */
-  windowDensity: 'dense' | 'normal' | 'sparse'
+  /** Whether to include a roof row (always true now, kept for 1×1 edge case) */
+  hasRoof: boolean
   /** Door width in tiles */
   doorWidth: 1 | 2
-  /** Overlay probabilities (0–1) */
+  /** Overlay probabilities (0–1) — chimney removed; it's now a tile */
   overlays: Record<string, number>
 }
 
 const ARCHETYPE_PRESETS: Record<BuildingArchetype, StylePreset> = {
   residential: {
-    roof: 'peaked',
-    wallMaterial: null,
-    roofMaterial: null,
-    windowDensity: 'normal',
+    hasRoof: true,
     doorWidth: 1,
-    overlays: { chimney: 0.4, sign: 0.2 },
+    overlays: { sign: 0.2 },
   },
   institutional: {
-    roof: 'peaked',
-    wallMaterial: null,
-    roofMaterial: null,
-    windowDensity: 'dense',
+    hasRoof: true,
     doorWidth: 2,
     overlays: { sign: 0.8, flag: 0.1 },
   },
   industrial: {
-    roof: 'flat',
-    wallMaterial: 'stone',
-    roofMaterial: null,
-    windowDensity: 'sparse',
+    hasRoof: true,
     doorWidth: 2,
-    overlays: { smokestack: 0.7 },
+    overlays: { sign: 0.3 },
   },
   tower: {
-    roof: 'flat',
-    wallMaterial: 'grey',
-    roofMaterial: null,
-    windowDensity: 'sparse',
+    hasRoof: true,
     doorWidth: 1,
-    overlays: { dish: 0.8, antenna: 0.5 },
+    overlays: { sign: 0.2 },
   },
 }
 
@@ -126,6 +110,23 @@ function seededRandom(seed: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Building Kit Selection
+// ---------------------------------------------------------------------------
+
+/** Available building kit materials in the atlas */
+export type BuildingKit = 'type1' | 'type2'
+
+/**
+ * Select a building kit deterministically from the seed.
+ * The biome-materials system provides a preferred kit, but the seed
+ * is used as fallback for biomes without a preference.
+ */
+function selectKit(seed: number, biomeKit: BuildingKit | undefined): BuildingKit {
+  if (biomeKit) return biomeKit
+  return seed % 2 === 0 ? 'type1' : 'type2'
+}
+
+// ---------------------------------------------------------------------------
 // Zone Computation
 // ---------------------------------------------------------------------------
 
@@ -134,90 +135,65 @@ interface ZoneLayout {
   wallRows: number
   baseRows: number
   hasRoof: boolean
-  roofStyle: 'peaked' | 'flat' | 'none'
 }
 
 function computeZones(height: number, preset: StylePreset): ZoneLayout {
   if (height === 1) {
-    return {
-      roofRows: 0,
-      wallRows: 0,
-      baseRows: 1,
-      hasRoof: false,
-      roofStyle: 'none',
-    }
+    // 1-tall: just a door, no roof
+    return { roofRows: 0, wallRows: 0, baseRows: 1, hasRoof: false }
   }
 
   if (height === 2) {
-    if (preset.roof === 'peaked' || preset.roof === 'flat') {
-      return {
-        roofRows: 1,
-        wallRows: 0,
-        baseRows: 1,
-        hasRoof: true,
-        roofStyle: preset.roof,
-      }
-    }
-    return {
-      roofRows: 0,
-      wallRows: 1,
-      baseRows: 1,
-      hasRoof: false,
-      roofStyle: 'none',
-    }
+    // 2-tall: roof row + base row (door)
+    return { roofRows: 1, wallRows: 0, baseRows: 1, hasRoof: preset.hasRoof }
   }
 
-  // H >= 3
-  const roofRows = preset.roof !== 'none' ? 1 : 0
+  // H >= 3: roof row + wall rows + base row
+  const roofRows = preset.hasRoof ? 1 : 0
   const wallRows = height - 1 - roofRows
-  return {
-    roofRows,
-    wallRows,
-    baseRows: 1,
-    hasRoof: preset.roof !== 'none',
-    roofStyle: preset.roof,
-  }
+  return { roofRows, wallRows, baseRows: 1, hasRoof: preset.hasRoof }
 }
 
 // ---------------------------------------------------------------------------
-// Grid Fill
+// Grid Fill — Building Kit Roles
+//
+// Each building uses roles from the type1/type2 kit:
+//   Roof row:   roof_left, roof_mid (repeated), roof_right, roof_chimney
+//   Wall rows:  wall_left, wall_mid (repeated), wall_right
+//   Base row:   wall_left, wall_mid/door, wall_right
 // ---------------------------------------------------------------------------
 
 function fillGrid(
   footprint: { width: number; height: number },
   zones: ZoneLayout,
-  wallMat: string,
-  roofMat: string,
+  kit: BuildingKit,
   preset: StylePreset,
   seed: number,
 ): TileAssignment[][] {
   const { width, height } = footprint
   const grid: TileAssignment[][] = []
 
-  // Initialize grid with default wall tiles
+  // Helper to create a cell
+  const cell = (role: string): TileAssignment => ({
+    role,
+    material: kit,
+    family: 'building',
+    alpha: 1,
+    visible: true,
+  })
+
+  // Initialize grid with default wall_mid tiles
   for (let y = 0; y < height; y++) {
     const row: TileAssignment[] = []
     for (let x = 0; x < width; x++) {
-      row.push({
-        role: 'wall_tl',
-        material: wallMat,
-        family: 'building',
-        alpha: 1,
-        visible: true,
-      })
+      row.push(cell('wall_mid'))
     }
     grid.push(row)
   }
 
   // Special case: 1×1 building is a single door tile
   if (width === 1 && height === 1) {
-    grid[0]![0] = {
-      role: 'door',
-      material: wallMat,
-      family: 'building',
-      alpha: 1,
-      visible: true,
-    }
+    grid[0]![0] = cell('door')
     return grid
   }
 
@@ -225,113 +201,139 @@ function fillGrid(
 
   // --- Roof zone ---
   if (zones.hasRoof && zones.roofRows > 0) {
-    for (let y = 0; y < zones.roofRows; y++) {
-      for (let x = 0; x < width; x++) {
-        const cell = grid[currentRow + y]![x]!
-        if (zones.roofStyle === 'peaked') {
-          // Peaked roof: alternating tl/tr pattern
-          cell.family = 'roof'
-          cell.material = roofMat
-          if (width === 1) {
-            cell.role = 'tl'
-          } else if (x === 0) {
-            cell.role = 'tl'
-          } else if (x === width - 1) {
-            cell.role = 'tr'
-          } else {
-            // Alternate tl/tr for middle tiles
-            cell.role = x % 2 === 1 ? 'tl' : 'tr'
-          }
-        } else {
-          // Flat roof: parapet using wall tiles
-          cell.family = 'building'
-          cell.material = wallMat
-          if (x === 0) {
-            cell.role = 'wall_tl'
-          } else if (x === width - 1) {
-            cell.role = 'wall_tr'
-          } else {
-            cell.role = 'wall_tl'
-          }
-        }
-      }
-    }
+    fillRoofRow(grid[currentRow]!, width, kit, seed)
     currentRow += zones.roofRows
   }
 
   // --- Wall zone ---
   for (let y = 0; y < zones.wallRows; y++) {
-    for (let x = 0; x < width; x++) {
-      const cell = grid[currentRow + y]![x]!
-      cell.family = 'building'
-      cell.material = wallMat
-
-      if (x === 0) {
-        cell.role = 'wall_tl'
-      } else if (x === width - 1) {
-        cell.role = 'wall_tr'
-      } else {
-        // Middle columns — window or wall fill based on density
-        const shouldWindow = shouldPlaceWindow(
-          x,
-          width,
-          y,
-          preset.windowDensity,
-          seed,
-        )
-        cell.role = shouldWindow ? 'window' : 'wall_tl'
-      }
-    }
-    currentRow += 1
+    fillWallRow(grid[currentRow + y]!, width, kit)
   }
+  currentRow += zones.wallRows
 
-  // --- Base zone ---
+  // --- Base zone (bottom row with door) ---
   if (zones.baseRows > 0) {
     const baseY = height - 1
-    const doorCenter = Math.floor(width / 2)
-
-    for (let x = 0; x < width; x++) {
-      const cell = grid[baseY]![x]!
-      cell.family = 'building'
-      cell.material = wallMat
-
-      if (width === 1) {
-        // Single-width: just a door
-        cell.role = 'door'
-      } else if (x === 0) {
-        cell.role = 'wall_bl'
-      } else if (x === width - 1) {
-        cell.role = 'wall_br'
-      } else if (isDoorPosition(x, width, doorCenter, preset.doorWidth)) {
-        cell.role = 'door'
-      } else {
-        cell.role = 'wall_bl'
-      }
-    }
+    fillBaseRow(grid[baseY]!, width, kit, preset.doorWidth)
   }
 
   return grid
 }
 
-function shouldPlaceWindow(
-  x: number,
+/**
+ * Fill a roof row with roof tiles and a chimney.
+ *
+ * Layout strategy by width:
+ *   W=1: roof_chimney (just chimney)
+ *   W=2: roof_left, roof_chimney
+ *   W=3: roof_left, roof_mid, roof_chimney
+ *   W=4: roof_left, roof_mid, roof_right, roof_chimney
+ *   W≥5: roof_left, roof_mid..., roof_right, roof_chimney
+ *
+ * Chimney is always the rightmost tile.
+ */
+function fillRoofRow(
+  row: TileAssignment[],
   width: number,
-  rowIndex: number,
-  density: 'dense' | 'normal' | 'sparse',
-  seed: number,
-): boolean {
-  // x is a middle column (not 0 or width-1)
-  switch (density) {
-    case 'dense':
-      return true
-    case 'normal':
-      return (x + rowIndex) % 2 === 1
-    case 'sparse': {
-      // Only 1 window per row, position chosen by seed
-      const middleCols = width - 2
-      if (middleCols <= 0) return false
-      const windowCol = 1 + (Math.abs(seed + rowIndex * 7) % middleCols)
-      return x === windowCol
+  kit: BuildingKit,
+  _seed: number,
+): void {
+  const assign = (x: number, role: string) => {
+    row[x] = { role, material: kit, family: 'building', alpha: 1, visible: true }
+  }
+
+  if (width === 1) {
+    assign(0, 'roof_chimney')
+    return
+  }
+
+  if (width === 2) {
+    assign(0, 'roof_left')
+    assign(1, 'roof_chimney')
+    return
+  }
+
+  // W >= 3: left edge, middle fills, right before chimney, chimney at end
+  assign(0, 'roof_left')
+
+  // Middle tiles
+  for (let x = 1; x < width - 2; x++) {
+    assign(x, 'roof_mid')
+  }
+
+  // Second-to-last = roof_right
+  assign(width - 2, 'roof_right')
+
+  // Last = chimney
+  assign(width - 1, 'roof_chimney')
+}
+
+/**
+ * Fill a wall row with wall_left, wall_mid, wall_right.
+ */
+function fillWallRow(
+  row: TileAssignment[],
+  width: number,
+  kit: BuildingKit,
+): void {
+  const assign = (x: number, role: string) => {
+    row[x] = { role, material: kit, family: 'building', alpha: 1, visible: true }
+  }
+
+  if (width === 1) {
+    assign(0, 'wall_mid')
+    return
+  }
+
+  assign(0, 'wall_left')
+  for (let x = 1; x < width - 1; x++) {
+    assign(x, 'wall_mid')
+  }
+  assign(width - 1, 'wall_right')
+}
+
+/**
+ * Fill the base (bottom) row with walls and a centered door.
+ *
+ * Layout strategy:
+ *   W=1: door
+ *   W=2: wall_left, door
+ *   W≥3: wall_left, [wall_mid...], door (centered), [wall_mid...], wall_right
+ *
+ * For doorWidth=2 and W≥4: two adjacent door tiles centered.
+ */
+function fillBaseRow(
+  row: TileAssignment[],
+  width: number,
+  kit: BuildingKit,
+  doorWidth: 1 | 2,
+): void {
+  const assign = (x: number, role: string) => {
+    row[x] = { role, material: kit, family: 'building', alpha: 1, visible: true }
+  }
+
+  if (width === 1) {
+    assign(0, 'door')
+    return
+  }
+
+  if (width === 2) {
+    assign(0, 'wall_left')
+    assign(1, 'door')
+    return
+  }
+
+  // W >= 3: left edge, middle fills, door(s), right edge
+  assign(0, 'wall_left')
+  assign(width - 1, 'wall_right')
+
+  const doorCenter = Math.floor(width / 2)
+
+  for (let x = 1; x < width - 1; x++) {
+    if (isDoorPosition(x, width, doorCenter, doorWidth)) {
+      assign(x, 'door')
+    } else {
+      assign(x, 'wall_mid')
     }
   }
 }
@@ -420,42 +422,6 @@ function createOverlay(
   _seed: number,
 ): OverlayAssignment | null {
   switch (type) {
-    case 'chimney':
-      return {
-        type,
-        family: 'decoration',
-        material: 'default',
-        role: 'crate',
-        offsetX: footprint.width * TILE_SIZE * 0.7,
-        offsetY: -10,
-      }
-    case 'antenna':
-      return {
-        type,
-        family: 'decoration',
-        material: 'default',
-        role: 'fence_v',
-        offsetX: footprint.width * TILE_SIZE * 0.8,
-        offsetY: -14,
-      }
-    case 'dish':
-      return {
-        type,
-        family: 'decoration',
-        material: 'default',
-        role: 'barrel',
-        offsetX: footprint.width * TILE_SIZE * 0.5,
-        offsetY: -12,
-      }
-    case 'smokestack':
-      return {
-        type,
-        family: 'decoration',
-        material: 'default',
-        role: 'fence_v',
-        offsetX: footprint.width * TILE_SIZE * 0.85,
-        offsetY: -16,
-      }
     case 'sign':
       return {
         type,
@@ -486,6 +452,12 @@ function createOverlay(
 /**
  * Compose a building into a tile grid.
  *
+ * Uses type1/type2 building kits from the atlas. Every building follows
+ * a strict row contract:
+ *   - Top row: roof tiles + chimney (always)
+ *   - Middle rows: wall tiles
+ *   - Bottom row: wall tiles + centered door
+ *
  * @param footprint     - Building dimensions in tiles { width, height }
  * @param style         - Building style string (e.g., 'house', 'tower', 'modern_office')
  * @param biome         - District biome (e.g., 'urban', 'library', 'industrial')
@@ -506,15 +478,14 @@ export function composeBuilding(
   const preset = ARCHETYPE_PRESETS[archetype]
   const biomeMats = resolveBiomeMaterials(biome)
 
-  // Resolve effective materials
-  const wallMat = preset.wallMaterial ?? biomeMats.wall
-  const roofMat = preset.roofMaterial ?? biomeMats.roof
+  // Select building kit (type1 or type2)
+  const kit = selectKit(seed, biomeMats.buildingKit)
 
   // Compute zones
   const zones = computeZones(footprint.height, preset)
 
   // Build grid
-  const grid = fillGrid(footprint, zones, wallMat, roofMat, preset, seed)
+  const grid = fillGrid(footprint, zones, kit, preset, seed)
 
   // Apply material state alpha
   const baseAlpha = materialAlpha(materialState ?? 'solid')

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { AgentEvent } from '@multiverse/shared'
+import { setDispatchPlaybackSpeed } from '../stores/eventStore'
 
 export type PlaybackState = 'idle' | 'playing' | 'paused' | 'complete'
 
@@ -96,6 +97,7 @@ export class ReplayEngine {
 
   /** Set playback speed multiplier */
   setSpeed(speed: number): void {
+    setDispatchPlaybackSpeed(speed)
     this.updateState({ speed })
   }
 

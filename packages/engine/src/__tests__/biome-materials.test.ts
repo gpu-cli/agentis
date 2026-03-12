@@ -75,11 +75,13 @@ describe('BIOME_MATERIALS', () => {
     }
   })
 
-  it('every biome material set has all four required keys', () => {
+  it('every biome material set has all required keys', () => {
     for (const [biome, mats] of Object.entries(BIOME_MATERIALS)) {
       expect(mats.wall, `${biome}.wall`).toBeTruthy()
       expect(mats.roof, `${biome}.roof`).toBeTruthy()
       expect(mats.road, `${biome}.road`).toBeTruthy()
+      expect(mats.roadInternal, `${biome}.roadInternal`).toBeTruthy()
+      expect(mats.roadConnector, `${biome}.roadConnector`).toBeTruthy()
       expect(mats.ground, `${biome}.ground`).toBeTruthy()
     }
   })
@@ -104,6 +106,34 @@ describe('BIOME_MATERIALS', () => {
       expect(validRoads).toContain(mats.road)
     }
   })
+
+  it('roadInternal material is "internal" for all biomes', () => {
+    for (const [, mats] of Object.entries(BIOME_MATERIALS)) {
+      expect(mats.roadInternal).toBe('internal')
+    }
+  })
+
+  it('roadConnector material is "connector" for all biomes', () => {
+    for (const [, mats] of Object.entries(BIOME_MATERIALS)) {
+      expect(mats.roadConnector).toBe('connector')
+    }
+  })
+
+  it('buildingKit values are valid when present', () => {
+    const validKits = ['type1', 'type2']
+    for (const [, mats] of Object.entries(BIOME_MATERIALS)) {
+      if (mats.buildingKit) {
+        expect(validKits).toContain(mats.buildingKit)
+      }
+    }
+  })
+
+  it('some biomes have explicit buildingKit preferences', () => {
+    expect(BIOME_MATERIALS['urban']!.buildingKit).toBe('type1')
+    expect(BIOME_MATERIALS['industrial']!.buildingKit).toBe('type2')
+    expect(BIOME_MATERIALS['observatory']!.buildingKit).toBe('type2')
+    expect(BIOME_MATERIALS['civic']!.buildingKit).toBe('type1')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -115,6 +145,12 @@ describe('DEFAULT_MATERIALS', () => {
     expect(DEFAULT_MATERIALS.wall).toBe('brick')
     expect(DEFAULT_MATERIALS.roof).toBe('red')
     expect(DEFAULT_MATERIALS.road).toBe('path')
+    expect(DEFAULT_MATERIALS.roadInternal).toBe('internal')
+    expect(DEFAULT_MATERIALS.roadConnector).toBe('connector')
     expect(DEFAULT_MATERIALS.ground).toBe('grass')
+  })
+
+  it('does not have a buildingKit preference (seed decides)', () => {
+    expect(DEFAULT_MATERIALS.buildingKit).toBeUndefined()
   })
 })

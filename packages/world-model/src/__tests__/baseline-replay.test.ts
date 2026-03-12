@@ -132,34 +132,30 @@ describe('baseline + incremental replay', () => {
   // 1. Existing repo edits only (no new file creates)
   // -------------------------------------------------------------------------
   describe('existing repo edits only', () => {
-    it('seeds all tiles at t=0 with no file_create events', () => {
+    it('buildings start empty, tiles arrive via events', () => {
       // All operations are reads/writes — every file is preexisting
+      // Note: read-only files (no edits) are excluded from work units,
+      // so every file here must have at least one write/create/delete.
       const ops = [
         ...makeOps('src/main.ts', ['file_read', 'file_write'], 1000),
         ...makeOps('src/utils.ts', ['file_write', 'file_read'], 1200),
-        ...makeOps('src/config.ts', ['file_read'], 1400),
+        ...makeOps('src/config.ts', ['file_write'], 1400),
       ]
 
       const snapshot = buildSnapshotFromOps(ops)
       const scenario = toScenarioData(snapshot)
 
-      // All 3 files should be pre-seeded as tiles in the snapshot
-      expect(scenario.snapshot.tiles.length).toBe(3)
-      for (const tile of scenario.snapshot.tiles) {
-        expect(tile.state).toBe('building')
-        expect(tile.building_id).toBeTruthy()
-        expect(tile.file_name).toBeTruthy()
-      }
+      // No tiles seeded at t=0 — buildings start empty and grow via events
+      expect(scenario.snapshot.tiles.length).toBe(0)
 
-      // file_create events from the main operation stream should be absent
-      // (but completion events at the end may add file_edit with state=complete)
-      const mainCreateEvents = scenario.events.filter(
+      // All 3 files arrive via file_create events during replay
+      const createEvents = scenario.events.filter(
         e => e.type === 'file_create' && e.source !== 'synthetic',
       )
-      expect(mainCreateEvents.length).toBe(0)
+      expect(createEvents.length).toBe(3)
     })
 
-    it('buildings start at health=100 when all files are preexisting', () => {
+    it('buildings start at health=0 (grow during replay)', () => {
       const ops = [
         ...makeOps('src/a.ts', ['file_read', 'file_write'], 1000),
         ...makeOps('src/b.ts', ['file_write'], 1200),
@@ -169,8 +165,10 @@ describe('baseline + incremental replay', () => {
       const scenario = toScenarioData(snapshot)
 
       for (const building of scenario.snapshot.buildings) {
-        expect(building.health).toBe(100)
-        expect(building.file_count).toBe(building.planned_file_count)
+        // All buildings start empty — tiles and health increase via events
+        expect(building.health).toBe(0)
+        expect(building.file_count).toBe(0)
+        expect(building.planned_file_count).toBeGreaterThanOrEqual(1)
       }
     })
   })
@@ -179,7 +177,7 @@ describe('baseline + incremental replay', () => {
   // 2. Mix of existing edits + new creates
   // -------------------------------------------------------------------------
   describe('mix of existing edits + new creates', () => {
-    it('baseline tiles at t=0, new tiles arrive via events', () => {
+    it('all tiles arrive via events (buildings grow from empty)', () => {
       const ops = [
         // Pre-existing: first op is file_read
         ...makeOps('src/existing.ts', ['file_read', 'file_write'], 1000),
@@ -190,22 +188,23 @@ describe('baseline + incremental replay', () => {
       const snapshot = buildSnapshotFromOps(ops)
       const scenario = toScenarioData(snapshot)
 
-      // Only the pre-existing file should be in the snapshot tiles
-      const snapshotTiles = scenario.snapshot.tiles
-      expect(snapshotTiles.length).toBe(1)
-      expect(snapshotTiles[0]!.file_name).toBe('existing.ts')
-      expect(snapshotTiles[0]!.state).toBe('building')
+      // No tiles in snapshot — all arrive via events
+      expect(scenario.snapshot.tiles.length).toBe(0)
 
-      // The new file should appear via a file_create event
+      // Both files appear via file_create events
       const createEvents = scenario.events.filter(
         e => e.type === 'file_create' && e.source !== 'synthetic',
       )
-      expect(createEvents.length).toBeGreaterThanOrEqual(1)
+      expect(createEvents.length).toBeGreaterThanOrEqual(2)
 
-      // Verify it targets the right file
+      // Verify both files targeted
+      const existingCreate = createEvents.find(e =>
+        typeof e.metadata?.path === 'string' && e.metadata.path.includes('existing.ts'),
+      )
       const newFileCreate = createEvents.find(e =>
         typeof e.metadata?.path === 'string' && e.metadata.path.includes('new-file.ts'),
       )
+      expect(existingCreate).toBeTruthy()
       expect(newFileCreate).toBeTruthy()
       expect(newFileCreate!.target?.tile_id).toBeTruthy()
       expect(newFileCreate!.target?.building_id).toBeTruthy()
@@ -441,8 +440,8 @@ describe('baseline + incremental replay', () => {
         .filter(Boolean) as string[]
 
       const uniqueCreateIds = new Set(createTileIds)
-      // 3 new files should have 3 unique tile_ids
-      expect(uniqueCreateIds.size).toBe(3)
+      // All 4 files (3 new + 1 existing) arrive via events → 4 unique tile_ids
+      expect(uniqueCreateIds.size).toBe(4)
 
       // Each tile_id should be deterministically different
       const idArray = [...uniqueCreateIds]
@@ -479,7 +478,7 @@ describe('baseline + incremental replay', () => {
   // Work-unit-only mode (no operations attached)
   // -------------------------------------------------------------------------
   describe('work-unit-only mode', () => {
-    it('treats all files as preexisting when no operations attached', () => {
+    it('buildings start empty even when no operations attached', () => {
       const ops = [
         ...makeOps('src/a.ts', ['file_read', 'file_write'], 1000),
         ...makeOps('src/b.ts', ['file_create', 'file_write'], 1200),
@@ -489,17 +488,18 @@ describe('baseline + incremental replay', () => {
       const snapshot = buildSnapshotFromOps(ops, { attachOps: false })
       const scenario = toScenarioData(snapshot)
 
-      // All files should be in the snapshot as preexisting (building state)
-      // since we can't distinguish without operations
-      expect(scenario.snapshot.tiles.length).toBe(2)
-      for (const tile of scenario.snapshot.tiles) {
-        expect(tile.state).toBe('building')
+      // No tiles seeded at t=0 — all arrive via events
+      expect(scenario.snapshot.tiles.length).toBe(0)
+
+      // Buildings start empty
+      for (const building of scenario.snapshot.buildings) {
+        expect(building.health).toBe(0)
+        expect(building.file_count).toBe(0)
       }
 
-      // Health should be 100 since all files are baseline
-      for (const building of scenario.snapshot.buildings) {
-        expect(building.health).toBe(100)
-      }
+      // Tiles arrive via file_create events in work-unit mode
+      const createEvents = scenario.events.filter(e => e.type === 'file_create')
+      expect(createEvents.length).toBeGreaterThanOrEqual(2)
     })
   })
 })

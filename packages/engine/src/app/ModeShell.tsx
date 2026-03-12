@@ -13,44 +13,13 @@ import { TranscriptPage } from '../modes/transcript/TranscriptPage'
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ModeShellProps {
-  /**
-   * Whether the in-app transcript upload flow is enabled.
-   *
-   * - `true`:  Show "Upload Transcripts" button (local app / internal use)
-   * - `false`: Show "Run Locally" button linking to install docs (hosted app)
-   *
-   * Defaults to `true` so the local @agentis/local app works without config.
-   */
-  transcriptUploadEnabled?: boolean
-}
-
-// ---------------------------------------------------------------------------
-// Run Locally CTA — shown when transcript upload is disabled (hosted app)
-// ---------------------------------------------------------------------------
-
-function RunLocallyCTA() {
-  return (
-    <a
-      href="/install"
-      className="group block bg-gray-950/70 backdrop-blur-sm border border-gray-700/60 rounded-xl p-6 text-left hover:border-blue-500/50 hover:bg-gray-950/80 hover:shadow-[0_0_30px_rgba(96,165,250,0.08)] transition-all duration-300"
-    >
-      <div className="text-2xl mb-3">🖥️</div>
-      <h2 className="font-pixel text-sm text-blue-400 mb-2 group-hover:text-blue-300 transition-colors">
-        Run Locally
-      </h2>
-      <p className="text-xs text-gray-400 leading-relaxed">
-        Clone the repo and visualize your own coding sessions. Your transcripts never leave your machine.
-      </p>
-    </a>
-  )
-}
+export interface ModeShellProps {}
 
 // ---------------------------------------------------------------------------
 // Mode Selection Screen
 // ---------------------------------------------------------------------------
 
-function ModeSelection({ transcriptUploadEnabled }: { transcriptUploadEnabled: boolean }) {
+function ModeSelection() {
   const setMode = useModeStore((s) => s.setMode)
 
   return (
@@ -79,27 +48,23 @@ function ModeSelection({ transcriptUploadEnabled }: { transcriptUploadEnabled: b
               Demo Mode
             </h2>
             <p className="text-xs text-gray-400 leading-relaxed">
-              Explore pre-built scenarios showing how agents build features, fix incidents, and conduct research.
+              Explore pre-built scenarios.
             </p>
           </button>
 
-          {/* Transcript Mode OR Run Locally CTA */}
-          {transcriptUploadEnabled ? (
-            <button
-              onClick={() => setMode('transcript')}
-              className="group cursor-pointer bg-gray-950/70 backdrop-blur-sm border border-gray-700/60 rounded-xl p-6 text-left hover:border-blue-500/50 hover:bg-gray-950/80 hover:shadow-[0_0_30px_rgba(96,165,250,0.08)] transition-all duration-300"
-            >
-              <div className="text-2xl mb-3">📤</div>
-              <h2 className="font-pixel text-sm text-blue-400 mb-2 group-hover:text-blue-300 transition-colors">
-                Upload Transcripts
-              </h2>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                Upload your Claude transcript files to simulate your own coding sessions as a living world.
-              </p>
-            </button>
-          ) : (
-            <RunLocallyCTA />
-          )}
+          {/* Transcript Mode */}
+          <button
+            onClick={() => setMode('transcript')}
+            className="group cursor-pointer bg-gray-950/70 backdrop-blur-sm border border-gray-700/60 rounded-xl p-6 text-left hover:border-blue-500/50 hover:bg-gray-950/80 hover:shadow-[0_0_30px_rgba(96,165,250,0.08)] transition-all duration-300"
+          >
+            <div className="text-2xl mb-3">🔒</div>
+            <h2 className="font-pixel text-sm text-blue-400 mb-2 group-hover:text-blue-300 transition-colors">
+              Import Your Transcripts
+            </h2>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              Processed entirely on your device. Nothing is sent to us.
+            </p>
+          </button>
         </div>
       </div>
     </div>
@@ -110,14 +75,14 @@ function ModeSelection({ transcriptUploadEnabled }: { transcriptUploadEnabled: b
 // ModeShell — Top-level router
 // ---------------------------------------------------------------------------
 
-export function ModeShell({ transcriptUploadEnabled = true }: ModeShellProps) {
+export function ModeShell(_props: ModeShellProps) {
   const mode = useModeStore((s) => s.mode)
 
   if (mode === null) {
     return (
       <>
         <GlobalErrorCatcher />
-        <ModeSelection transcriptUploadEnabled={transcriptUploadEnabled} />
+        <ModeSelection />
       </>
     )
   }

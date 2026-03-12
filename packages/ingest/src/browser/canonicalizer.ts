@@ -8,10 +8,12 @@ import type {
   CanonicalOperation,
   OperationKind,
   ActorRef,
+  ActionSpan,
   ProjectMeta,
   RepoMeta,
   BranchMeta,
 } from '@multiverse/world-model'
+import { PERCEPTUAL_FLOOR_MS } from '@multiverse/world-model'
 
 import type { BrowserParsedRecord } from './parser'
 import {
@@ -28,8 +30,8 @@ import { scrubSecrets } from './privacy'
 
 const TOOL_KIND_MAP: Record<string, OperationKind> = {
   Read: 'file_read',
-  Write: 'file_write',
-  Edit: 'file_write',
+  Write: 'file_create',    // Write creates/overwrites entire file → treat as create
+  Edit: 'file_write',      // Edit modifies existing file in place → treat as edit
   MultiEdit: 'file_write',
   Bash: 'command_run',
   Grep: 'search',
@@ -44,7 +46,7 @@ const TOOL_KIND_MAP: Record<string, OperationKind> = {
   NotebookEdit: 'file_write',
   WebFetch: 'web_fetch',
   TodoRead: 'file_read',
-  TodoWrite: 'file_write',
+  TodoWrite: 'file_create', // TodoWrite creates/overwrites → treat as create
 }
 
 function classifyTool(toolName: string): OperationKind {
@@ -256,15 +258,22 @@ export function canonicalize(
             })
           }
         }
-        // Mark preceding tool_use operation as error when tool_result has is_error
+        // Mark preceding tool_use operation as error when tool_result has is_error,
+        // but NOT for delegation/spawning tools (Task, Agent) — their error status
+        // is informational (task completion notification), not a system error.
         if (typeof block.type === 'string' && block.type === 'tool_result' && block.is_error === true) {
-          const toolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : undefined
-          // Walk backwards to find the matching tool_use op and mark it
-          if (toolUseId) {
+          const resultToolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : undefined
+          if (resultToolUseId) {
+            // Walk backwards to find the operation with the exact matching toolUseId
             for (let oi = operations.length - 1; oi >= 0; oi--) {
               const prevOp = operations[oi]!
-              if (prevOp.kind === 'command_run' || prevOp.kind === 'file_read' || prevOp.kind === 'search' || prevOp.kind === 'file_write' || prevOp.kind === 'file_create') {
-                prevOp.isError = true
+              if (prevOp.toolUseId === resultToolUseId) {
+                // Skip error marking for delegation tools — their "errors" are
+                // just task completion signals, not real failures worth spawning monsters
+                const DELEGATION_KINDS: Set<OperationKind> = new Set(['task_spawn', 'task_complete'])
+                if (!DELEGATION_KINDS.has(prevOp.kind)) {
+                  prevOp.isError = true
+                }
                 break
               }
             }
@@ -553,6 +562,9 @@ function processToolUse(
     }
   }
 
+  // Capture the tool_use block ID for exact matching with tool_result
+  const toolUseId = typeof block.id === 'string' ? block.id : undefined
+
   return {
     id: `op_${(opCounter++).toString(36).padStart(6, '0')}`,
     timestamp: ts,
@@ -562,7 +574,123 @@ function processToolUse(
     repoRoot: defaultRepoRoot,
     branch,
     toolName,
+    toolUseId,
     summary,
     rawRef: { file: item.fileName, line: item.line },
   }
+}
+
+// ---------------------------------------------------------------------------
+// ActionSpan extraction — pair tool_use with tool_result for real timing
+// ---------------------------------------------------------------------------
+
+/** Tool kinds that mutate world state (create tiles or modify them) */
+const MUTATION_TOOL_KINDS = new Set<OperationKind>([
+  'file_create', 'file_write', 'file_delete',
+])
+
+/** Tools with progress records (long-running) */
+const toolUseIdsWithProgress = new Set<string>()
+
+/**
+ * Extract ActionSpans from parsed transcript records + canonical operations.
+ * 
+ * Pairs each tool_use block (by its id) with the corresponding tool_result
+ * block (by tool_use_id) to derive real start/end timestamps. The visual
+ * duration is clamped to PERCEPTUAL_FLOOR_MS so ultra-fast operations
+ * remain visible during replay.
+ *
+ * Also detects progress records (bash_progress) to mark long-running spans.
+ */
+export function extractActionSpans(
+  records: BrowserParsedRecord[],
+  operations: CanonicalOperation[],
+): ActionSpan[] {
+  // Build lookup: toolUseId → operation
+  const opByToolUseId = new Map<string, CanonicalOperation>()
+  for (const op of operations) {
+    if (op.toolUseId) {
+      opByToolUseId.set(op.toolUseId, op)
+    }
+  }
+
+  // Build lookup: toolUseId → tool_use start timestamp (from records)
+  const toolUseStartTs = new Map<string, number>()
+  // Build lookup: toolUseId → tool_result end timestamp (from records)
+  const toolResultEndTs = new Map<string, number>()
+  // Track which toolUseIds have progress records
+  toolUseIdsWithProgress.clear()
+
+  for (const item of records) {
+    const record = item.record
+    const ts = parseTs(record)
+    if (ts === 0) continue
+    const recordType = typeof record.type === 'string' ? record.type : ''
+
+    // Find tool_use blocks in assistant records → start timestamps
+    if (recordType === 'assistant') {
+      const blocks = getRecordBlocks(record)
+      for (const block of blocks) {
+        if (typeof block.type === 'string' && block.type === 'tool_use') {
+          const id = typeof block.id === 'string' ? block.id : null
+          if (id && !toolUseStartTs.has(id)) {
+            toolUseStartTs.set(id, ts)
+          }
+        }
+      }
+    }
+
+    // Find tool_result blocks in user records → end timestamps
+    if (recordType === 'user') {
+      const blocks = getRecordBlocks(record)
+      for (const block of blocks) {
+        if (typeof block.type === 'string' && block.type === 'tool_result') {
+          const id = typeof block.tool_use_id === 'string' ? block.tool_use_id : null
+          if (id) {
+            toolResultEndTs.set(id, ts)
+          }
+        }
+      }
+    }
+
+    // Detect progress records linked to tool_use IDs
+    if (recordType === 'progress') {
+      const parentToolUseId = typeof record.parentToolUseID === 'string' ? record.parentToolUseID : null
+      if (parentToolUseId) {
+        toolUseIdsWithProgress.add(parentToolUseId)
+      }
+    }
+  }
+
+  // Build spans by pairing tool_use → tool_result
+  const spans: ActionSpan[] = []
+
+  for (const [toolUseId, op] of opByToolUseId) {
+    const startMs = toolUseStartTs.get(toolUseId)
+    const endMs = toolResultEndTs.get(toolUseId)
+    if (startMs === undefined) continue // no start record found
+
+    const actualEnd = endMs ?? startMs // if no result, treat as instantaneous
+    const rawDuration = Math.max(0, actualEnd - startMs)
+    const visualDurationMs = Math.max(rawDuration, PERCEPTUAL_FLOOR_MS)
+    const isMutation = MUTATION_TOOL_KINDS.has(op.kind)
+
+    spans.push({
+      toolUseId,
+      toolName: op.toolName ?? 'unknown',
+      startMs,
+      endMs: actualEnd,
+      visualDurationMs,
+      isMutation,
+      targetPath: op.targetPath,
+      actorId: op.actor.id,
+      operationId: op.id,
+      hasProgress: toolUseIdsWithProgress.has(toolUseId),
+    })
+  }
+
+  // Sort by start time, preserving overlap for parallel calls
+  spans.sort((a, b) => a.startMs - b.startMs)
+
+  return spans
 }

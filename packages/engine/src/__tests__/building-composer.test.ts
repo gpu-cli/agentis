@@ -2,6 +2,11 @@
 // BuildingComposer — Unit tests for compositional building tile generation
 //
 // Tests pure functions only — no PixiJS rendering.
+// V2: Tests the type1/type2 building kit contract:
+//   - Top row always has roof tiles + chimney
+//   - Bottom row always has a door
+//   - Middle rows are standard wall tiles
+//   - All tiles use family='building' with type1/type2 material
 // ============================================================================
 
 import { describe, it, expect } from 'vitest'
@@ -10,7 +15,7 @@ import { composeBuilding } from '../engine/BuildingComposer'
 import type { ComposedBuilding, TileAssignment } from '../engine/BuildingComposer'
 
 // ---------------------------------------------------------------------------
-// Helper
+// Helpers
 // ---------------------------------------------------------------------------
 
 /** Count visible cells in a composed building */
@@ -33,6 +38,16 @@ function visibleCells(cb: ComposedBuilding): TileAssignment[] {
     }
   }
   return cells
+}
+
+/** Check if a role is a roof role */
+function isRoofRole(role: string): boolean {
+  return role.startsWith('roof_')
+}
+
+/** Check if a role is a wall role */
+function isWallRole(role: string): boolean {
+  return role.startsWith('wall_')
 }
 
 // ---------------------------------------------------------------------------
@@ -70,50 +85,162 @@ describe('composeBuilding grid dimensions', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Zone decomposition
+// Building kit material — all cells use type1 or type2
 // ---------------------------------------------------------------------------
 
-describe('zone decomposition', () => {
-  it('residential 3-tall building has roof, walls, and base', () => {
+describe('building kit material', () => {
+  it('all cells use type1 or type2 material', () => {
     const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
-
-    // Row 0 = roof
-    for (const cell of cb.grid[0]!) {
-      expect(cell.family).toBe('roof')
-    }
-    // Row 1 = wall
-    for (const cell of cb.grid[1]!) {
-      expect(cell.family).toBe('building')
-    }
-    // Row 2 = base
-    for (const cell of cb.grid[2]!) {
-      expect(cell.family).toBe('building')
+    for (const row of cb.grid) {
+      for (const cell of row) {
+        expect(['type1', 'type2']).toContain(cell.material)
+      }
     }
   })
 
-  it('industrial building has flat roof (wall family)', () => {
-    const cb = composeBuilding({ width: 3, height: 3 }, 'factory', 'industrial', 100, 42)
-    // Row 0 = flat roof (still 'building' family)
-    for (const cell of cb.grid[0]!) {
-      expect(cell.family).toBe('building')
+  it('all cells use building family', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
+    for (const row of cb.grid) {
+      for (const cell of row) {
+        expect(cell.family).toBe('building')
+      }
     }
   })
 
-  it('2-tall residential has roof + base', () => {
+  it('urban biome uses type1 kit', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
+    expect(cb.grid[0]![0]!.material).toBe('type1')
+  })
+
+  it('industrial biome uses type2 kit', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'industrial', 100, 42)
+    expect(cb.grid[0]![0]!.material).toBe('type2')
+  })
+
+  it('biomes without kit preference use seed-based selection', () => {
+    // arts biome has no buildingKit preference — seed decides
+    const kits = new Set<string>()
+    for (let seed = 0; seed < 10; seed++) {
+      const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'arts', 100, seed)
+      kits.add(cb.grid[0]![0]!.material)
+    }
+    expect(kits.size).toBe(2) // Both type1 and type2 appear
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Roof row contract — top row always has roof tiles + chimney
+// ---------------------------------------------------------------------------
+
+describe('roof row contract', () => {
+  it('3-tall building top row is all roof roles', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
+    for (const cell of cb.grid[0]!) {
+      expect(isRoofRole(cell.role)).toBe(true)
+    }
+  })
+
+  it('3-tall building top row has exactly one chimney at rightmost position', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
+    const roofRow = cb.grid[0]!
+    const chimneyCount = roofRow.filter(c => c.role === 'roof_chimney').length
+    expect(chimneyCount).toBe(1)
+    expect(roofRow[roofRow.length - 1]!.role).toBe('roof_chimney')
+  })
+
+  it('2-tall building top row is all roof roles', () => {
     const cb = composeBuilding({ width: 2, height: 2 }, 'house', 'urban', 100, 42)
-    // Row 0 = roof
     for (const cell of cb.grid[0]!) {
-      expect(cell.family).toBe('roof')
+      expect(isRoofRole(cell.role)).toBe(true)
     }
-    // Row 1 = base
-    for (const cell of cb.grid[1]!) {
-      expect(cell.family).toBe('building')
+  })
+
+  it('2-tall building has chimney at rightmost position', () => {
+    const cb = composeBuilding({ width: 2, height: 2 }, 'house', 'urban', 100, 42)
+    expect(cb.grid[0]![1]!.role).toBe('roof_chimney')
+  })
+
+  it('wide building has correct roof pattern: left, mid..., right, chimney', () => {
+    const cb = composeBuilding({ width: 4, height: 3 }, 'house', 'urban', 100, 42)
+    const roofRow = cb.grid[0]!
+    expect(roofRow[0]!.role).toBe('roof_left')
+    expect(roofRow[1]!.role).toBe('roof_mid')
+    expect(roofRow[2]!.role).toBe('roof_right')
+    expect(roofRow[3]!.role).toBe('roof_chimney')
+  })
+
+  it('1-wide 2-tall building roof has chimney only', () => {
+    const cb = composeBuilding({ width: 1, height: 2 }, 'house', 'urban', 100, 42)
+    expect(cb.grid[0]![0]!.role).toBe('roof_chimney')
+  })
+
+  it('industrial building has roof with chimney too', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'factory', 'industrial', 100, 42)
+    const roofRow = cb.grid[0]!
+    expect(isRoofRole(roofRow[0]!.role)).toBe(true)
+    const chimneyCount = roofRow.filter(c => c.role === 'roof_chimney').length
+    expect(chimneyCount).toBe(1)
+  })
+
+  it('tower building has roof with chimney', () => {
+    const cb = composeBuilding({ width: 2, height: 3 }, 'server_tower', 'urban', 100, 42)
+    const roofRow = cb.grid[0]!
+    const chimneyCount = roofRow.filter(c => c.role === 'roof_chimney').length
+    expect(chimneyCount).toBe(1)
+  })
+
+  it('chimney is present for all building sizes ≥ 2 tall', () => {
+    const sizes = [
+      { width: 2, height: 2 },
+      { width: 3, height: 2 },
+      { width: 3, height: 3 },
+      { width: 4, height: 3 },
+      { width: 2, height: 4 },
+      { width: 1, height: 2 },
+      { width: 1, height: 3 },
+    ]
+    for (const fp of sizes) {
+      const cb = composeBuilding(fp, 'house', 'urban', 100, 42)
+      const roofRow = cb.grid[0]!
+      const chimneyCount = roofRow.filter(c => c.role === 'roof_chimney').length
+      expect(chimneyCount, `${fp.width}×${fp.height} should have chimney`).toBe(1)
     }
   })
 })
 
 // ---------------------------------------------------------------------------
-// Base row — doors
+// Wall row contract — middle rows are wall tiles
+// ---------------------------------------------------------------------------
+
+describe('wall row contract', () => {
+  it('middle rows of 3-tall building are all wall roles', () => {
+    const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
+    // Row 1 = wall
+    for (const cell of cb.grid[1]!) {
+      expect(isWallRole(cell.role)).toBe(true)
+    }
+  })
+
+  it('wall row has left/mid/right pattern', () => {
+    const cb = composeBuilding({ width: 4, height: 4 }, 'house', 'urban', 100, 42)
+    // Rows 1 and 2 are wall rows
+    for (const y of [1, 2]) {
+      const wallRow = cb.grid[y]!
+      expect(wallRow[0]!.role).toBe('wall_left')
+      expect(wallRow[1]!.role).toBe('wall_mid')
+      expect(wallRow[2]!.role).toBe('wall_mid')
+      expect(wallRow[3]!.role).toBe('wall_right')
+    }
+  })
+
+  it('single-width wall row uses wall_mid', () => {
+    const cb = composeBuilding({ width: 1, height: 3 }, 'house', 'urban', 100, 42)
+    expect(cb.grid[1]![0]!.role).toBe('wall_mid')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Base row — door contract
 // ---------------------------------------------------------------------------
 
 describe('base row door placement', () => {
@@ -131,11 +258,40 @@ describe('base row door placement', () => {
     expect(doorCount).toBe(2)
   })
 
-  it('base row corners are wall_bl/wall_br', () => {
+  it('base row edges use wall_left and wall_right', () => {
     const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, 42)
     const baseRow = cb.grid[2]!
-    expect(baseRow[0]!.role).toBe('wall_bl')
-    expect(baseRow[2]!.role).toBe('wall_br')
+    expect(baseRow[0]!.role).toBe('wall_left')
+    expect(baseRow[2]!.role).toBe('wall_right')
+  })
+
+  it('2-wide base row: wall_left + door', () => {
+    const cb = composeBuilding({ width: 2, height: 2 }, 'house', 'urban', 100, 42)
+    const baseRow = cb.grid[1]!
+    expect(baseRow[0]!.role).toBe('wall_left')
+    expect(baseRow[1]!.role).toBe('door')
+  })
+
+  it('1-wide base row: just a door', () => {
+    const cb = composeBuilding({ width: 1, height: 2 }, 'house', 'urban', 100, 42)
+    const baseRow = cb.grid[1]!
+    expect(baseRow[0]!.role).toBe('door')
+  })
+
+  it('every building ≥ 1 tall has exactly one or more doors at base', () => {
+    const sizes = [
+      { width: 1, height: 1 },
+      { width: 2, height: 2 },
+      { width: 3, height: 3 },
+      { width: 4, height: 3 },
+      { width: 1, height: 3 },
+    ]
+    for (const fp of sizes) {
+      const cb = composeBuilding(fp, 'house', 'urban', 100, 42)
+      const baseRow = cb.grid[fp.height - 1]!
+      const doorCount = baseRow.filter(c => c.role === 'door').length
+      expect(doorCount, `${fp.width}×${fp.height} should have door(s)`).toBeGreaterThanOrEqual(1)
+    }
   })
 })
 
@@ -199,45 +355,6 @@ describe('material state', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Biome material resolution
-// ---------------------------------------------------------------------------
-
-describe('biome material integration', () => {
-  it('urban biome uses brick walls', () => {
-    const cb = composeBuilding({ width: 2, height: 2 }, 'house', 'urban', 100, 42)
-    const wallCells = visibleCells(cb).filter(c => c.family === 'building')
-    expect(wallCells.length).toBeGreaterThan(0)
-    for (const cell of wallCells) {
-      expect(cell.material).toBe('brick')
-    }
-  })
-
-  it('library biome uses wood walls', () => {
-    const cb = composeBuilding({ width: 2, height: 2 }, 'house', 'library', 100, 42)
-    const wallCells = visibleCells(cb).filter(c => c.family === 'building')
-    for (const cell of wallCells) {
-      expect(cell.material).toBe('wood')
-    }
-  })
-
-  it('industrial preset overrides wall to stone', () => {
-    const cb = composeBuilding({ width: 3, height: 3 }, 'factory', 'urban', 100, 42)
-    const wallCells = visibleCells(cb).filter(c => c.family === 'building')
-    for (const cell of wallCells) {
-      expect(cell.material).toBe('stone')
-    }
-  })
-
-  it('tower preset overrides wall to grey', () => {
-    const cb = composeBuilding({ width: 2, height: 3 }, 'server_tower', 'urban', 100, 42)
-    const wallCells = visibleCells(cb).filter(c => c.family === 'building')
-    for (const cell of wallCells) {
-      expect(cell.material).toBe('grey')
-    }
-  })
-})
-
-// ---------------------------------------------------------------------------
 // Overlays
 // ---------------------------------------------------------------------------
 
@@ -261,6 +378,14 @@ describe('overlays', () => {
       expect(cb.overlays).toHaveLength(0)
     }
   })
+
+  it('chimney is NOT an overlay (it is a tile in the roof row)', () => {
+    for (let seed = 0; seed < 50; seed++) {
+      const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, seed)
+      const chimneyOverlays = cb.overlays.filter(o => o.type === 'chimney')
+      expect(chimneyOverlays).toHaveLength(0)
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -274,13 +399,13 @@ describe('determinism', () => {
     expect(a).toEqual(b)
   })
 
-  it('different seeds produce different overlay sets (probabilistically)', () => {
-    const results = new Set<number>()
-    for (let seed = 0; seed < 100; seed++) {
-      const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'urban', 100, seed)
-      results.add(cb.overlays.length)
+  it('different seeds may produce different kits', () => {
+    // arts biome has no kit preference → seed-driven
+    const materials = new Set<string>()
+    for (let seed = 0; seed < 10; seed++) {
+      const cb = composeBuilding({ width: 3, height: 3 }, 'house', 'arts', 100, seed)
+      materials.add(cb.grid[0]![0]!.material)
     }
-    // Should have at least 2 distinct overlay counts across 100 seeds
-    expect(results.size).toBeGreaterThanOrEqual(2)
+    expect(materials.size).toBeGreaterThanOrEqual(2)
   })
 })

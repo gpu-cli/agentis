@@ -12,7 +12,7 @@ export type LoadState =
 
 export function useDemoLoader() {
   const engine = useReplayEngine()
-  const [currentScenario, setCurrentScenario] = useState<DemoScenarioName>('password-reset')
+  const [currentScenario, setCurrentScenario] = useState<DemoScenarioName>('team-build')
   const [loadState, setLoadState] = useState<LoadState>({ phase: 'idle' })
   const initialized = useRef(false)
   const loadSeq = useRef(0)
@@ -42,7 +42,7 @@ export function useDemoLoader() {
   useEffect(() => {
     if (!initialized.current) {
       initialized.current = true
-      doLoad('password-reset')
+      doLoad('team-build')
     }
   }, [doLoad])
 

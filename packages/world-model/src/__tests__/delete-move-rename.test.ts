@@ -363,14 +363,15 @@ describe('filesPerTile grouping', () => {
   it('merges stats when grouping files', () => {
     const ops: CanonicalOperation[] = [
       makeOp({ id: 'op_1', kind: 'file_write', targetPath: '/project/src/a.ts', timestamp: 1000 }),
-      makeOp({ id: 'op_2', kind: 'file_read', targetPath: '/project/src/b.ts', timestamp: 2000 }),
+      makeOp({ id: 'op_2', kind: 'file_write', targetPath: '/project/src/b.ts', timestamp: 2000 }),
+      makeOp({ id: 'op_3', kind: 'file_read', targetPath: '/project/src/b.ts', timestamp: 2100 }),
     ]
 
     const units = buildWorkUnits(ops, 5, '/project')
-    // Both files grouped into one unit
+    // Both files have edits → both survive read-only filter → grouped into one unit
     expect(units.length).toBe(1)
-    expect(units[0]!.stats.editCount).toBe(1)
+    expect(units[0]!.stats.editCount).toBe(2)
     expect(units[0]!.stats.readCount).toBe(1)
-    expect(units[0]!.stats.opCount).toBe(2)
+    expect(units[0]!.stats.opCount).toBe(3)
   })
 })

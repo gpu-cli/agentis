@@ -470,6 +470,20 @@ export class AgentManager {
     return positions
   }
 
+  /** Clear all sprites so the next store sync recreates from fresh state */
+  reset(): void {
+    for (const sprite of this.sprites.values()) {
+      try {
+        this.container.removeChild(sprite.container)
+        sprite.container.destroy({ children: true })
+      } catch {
+        // PixiJS may already be torn down — safe to ignore
+      }
+    }
+    this.sprites.clear()
+    this._followPosition = null
+  }
+
   destroy(): void {
     this.unsubscribe?.()
     try {

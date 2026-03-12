@@ -59,6 +59,8 @@ interface UIState {
     type: 'agent' | 'monster' | 'workitem' | 'building' | 'district' | null,
   ) => void
   clearSelection: () => void
+  /** Reset all transient state (selection, hover, follow, panels) while preserving user preferences */
+  resetSelection: () => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -116,6 +118,22 @@ export const useUIStore = create<UIState>((set) => ({
       selectedEntityId: null,
       selectedEntityType: null,
       conversationAgentId: null,
+      agentPanelOpen: false,
+      monsterPanelOpen: false,
+      workItemPanelOpen: false,
+      buildingPanelOpen: false,
+      districtPanelOpen: false,
+    }),
+
+  resetSelection: () =>
+    set({
+      zoomTier: 'district',
+      followAgentId: null,
+      conversationAgentId: null,
+      hoveredEntityId: null,
+      hoveredEntityType: null,
+      selectedEntityId: null,
+      selectedEntityType: null,
       agentPanelOpen: false,
       monsterPanelOpen: false,
       workItemPanelOpen: false,

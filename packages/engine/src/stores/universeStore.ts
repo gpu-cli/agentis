@@ -71,7 +71,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
       building_id: buildingId,
       file_name: fileName,
       position,
-      state: 'scaffolding',
+      state: 'building',
       last_modified: Date.now(),
       created_by_agent: agentId,
     }
@@ -135,28 +135,24 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     const building = get().buildings.get(buildingId)
     if (!building) return
 
+    // Only count non-ruins tiles as active files
     const tiles = get().getBuildingTiles(buildingId)
-    const file_count = tiles.length
-    const completeCount = tiles.filter(
+    const activeTiles = tiles.filter((t) => t.state !== 'ruins')
+    const file_count = activeTiles.length
+    const completeCount = activeTiles.filter(
       (t) => t.state === 'complete' || t.state === 'building',
     ).length
     const health = file_count > 0 ? Math.round((completeCount / file_count) * 100) : 0
 
-    // Grow footprint based on tile count (tiles = files)
+    // Dynamic footprint — shrinks and grows with current active file count
     // S: 2x2 (≤2 files), M: 3x2 (≤6), L: 3x3 (≤9), XL: 4x3 (>9)
-    const footprint = file_count <= 2
+    const newFootprint = file_count <= 2
       ? { width: 2, height: 2 }
       : file_count <= 6
         ? { width: 3, height: 2 }
         : file_count <= 9
           ? { width: 3, height: 3 }
           : { width: 4, height: 3 }
-
-    // Only update footprint if it grew (never shrink — files may be temporarily removed)
-    const newFootprint =
-      footprint.width * footprint.height > building.footprint.width * building.footprint.height
-        ? footprint
-        : building.footprint
 
     get().updateBuilding(buildingId, { file_count, health, footprint: newFootprint })
   },

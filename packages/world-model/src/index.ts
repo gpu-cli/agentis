@@ -13,6 +13,8 @@ export type {
   OperationKind,
   ActorRef,
   CanonicalWorkModel,
+  // Action Spans (timing-faithful tool invocations)
+  ActionSpan,
   // World Model (layout-ready)
   MaterialState,
   MergeEvidence,
@@ -26,6 +28,9 @@ export type {
   WMBuilding,
   WorldModelSnapshot,
 } from './types'
+
+// --- Action Span constants ---
+export { PERCEPTUAL_FLOOR_MS } from './types'
 
 // --- Validators ---
 export {

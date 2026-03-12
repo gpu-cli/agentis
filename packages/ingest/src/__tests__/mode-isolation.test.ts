@@ -44,8 +44,8 @@ export function runDemoNeverTouchesStorageTest(): void {
   // - @multiverse/shared/mock (legacy mock scenarios — replaced by pipeline)
 
   // We can verify this by checking that the demo scenario names are valid
-  const demoScenarioNames = ['single-island', 'multi-district', 'multi-island', 'password-reset', 'incident-bad-env', 'research'] as const
-  assert.equal(demoScenarioNames.length, 6, 'demo should have exactly 6 scenarios')
+  const demoScenarioNames = ['team-build', 'refactor-rebuild'] as const
+  assert.equal(demoScenarioNames.length, 2, 'demo should have exactly 2 scenarios')
 
   // Each scenario name should be a simple string (no transcript/import references)
   for (const name of demoScenarioNames) {

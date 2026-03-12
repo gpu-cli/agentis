@@ -19,6 +19,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useEventStore } from '../stores/eventStore'
 import type { AgentEvent } from '@multiverse/shared'
 import type { DiffChange } from '../replay/diff'
+import { setOnResetCallback } from '../replay/bootstrap'
 import { isGpuEnabled, GpuOverlayManager } from '../gpu'
 import type { GpuTelemetry } from '../gpu'
 
@@ -104,6 +105,13 @@ export class WorldRenderer {
     this.tilemap.buildingContainer.zIndex = 5
     this.camera.viewport.addChild(this.tilemap.buildingContainer)
 
+    // Tile overlays — just above buildings for file-level state visualization
+    // (scaffolding, building, complete, ruins sprites inside buildings)
+    this.tilemap.tileLayer.zIndex = 5.5
+    this.tilemap.tileLayer.eventMode = 'none'
+    this.tilemap.tileLayer.interactiveChildren = false
+    this.camera.viewport.addChild(this.tilemap.tileLayer)
+
     // Occupancy animations — just above buildings so tile pulses overlay
     // building graphics but stay below labels and fog
     this.occupancyAnimator = new OccupancyAnimator()
@@ -132,15 +140,15 @@ export class WorldRenderer {
     this.fog.container.interactiveChildren = false
     this.camera.viewport.addChild(this.fog.container)
 
-    // Monsters — ABOVE fog so error sprites are always visible
-    this.monsterManager = new MonsterManager()
-    this.monsterManager.container.zIndex = 41
-    this.camera.viewport.addChild(this.monsterManager.container)
-
-    // Agents — ABOVE fog and monsters so agents are always visible
+    // Agents — ABOVE fog so agents are always visible
     this.agentManager = new AgentManager()
     this.agentManager.container.zIndex = 42
     this.camera.viewport.addChild(this.agentManager.container)
+
+    // Monsters — ABOVE agents so error sprites render on top
+    this.monsterManager = new MonsterManager()
+    this.monsterManager.container.zIndex = 43
+    this.camera.viewport.addChild(this.monsterManager.container)
 
     // Selection highlight — ABOVE fog so highlights are always visible
     // regardless of fog-of-war coverage. Uses stroke outlines + subtle fill.
@@ -169,6 +177,9 @@ export class WorldRenderer {
         // GPU init failure is non-fatal — CPU path covers all functionality
       })
     }
+
+    // Register for bootstrap resets so we clear cached state on scenario switch
+    setOnResetCallback(() => this.reset())
 
     // Start render loop
     this.app.ticker.add(() => this.update())
@@ -364,11 +375,19 @@ export class WorldRenderer {
   }
 
   private onEvent(event: AgentEvent): void {
+    // Determine if this is a transient tool error (red flash, short duration)
+    const isTransientError = event.metadata?.error_transient === true
+
     // Flash the target building tint on tool_use events
+    // Transient errors get a red tint with shorter duration; normal tools get tool color
     if (event.type === 'tool_use' && event.target?.tool_id) {
       if (event.target.building_id && this.tilemap) {
-        const toolColor = AssetLoader.instance.getToolColor(event.target.tool_id)
-        this.tilemap.flashBuildingTint(event.target.building_id, toolColor, 500)
+        if (isTransientError) {
+          this.tilemap.flashBuildingTint(event.target.building_id, 0xef4444, 300)
+        } else {
+          const toolColor = AssetLoader.instance.getToolColor(event.target.tool_id)
+          this.tilemap.flashBuildingTint(event.target.building_id, toolColor, 500)
+        }
       }
     }
 
@@ -383,19 +402,62 @@ export class WorldRenderer {
       const CHUNK = 64
       const building = useUniverseStore.getState().buildings.get(event.target.building_id)
       if (building) {
-        const px = (building.position.chunk_x * CHUNK + building.position.local_x) * TILE
-        const py = (building.position.chunk_y * CHUNK + building.position.local_y) * TILE
-        const w = building.footprint.width * TILE
-        const h = building.footprint.height * TILE
+        const bPx = (building.position.chunk_x * CHUNK + building.position.local_x) * TILE
+        const bPy = (building.position.chunk_y * CHUNK + building.position.local_y) * TILE
+        const bW = building.footprint.width * TILE
+        const bH = building.footprint.height * TILE
+
+        // Extract tile-local coordinates from metadata when available
+        const localCoords = event.metadata?.local as { x: number; y: number } | undefined
+        const hasTileCoords = localCoords && typeof localCoords.x === 'number' && typeof localCoords.y === 'number'
 
         if (event.type === 'tool_use') {
-          this.occupancyAnimator.animateWork(event.target.building_id, px, py, w, h)
-        } else if (event.type === 'file_delete') {
-          this.occupancyAnimator.animateDelete(event.target.building_id, px, py, w, h)
+          if (isTransientError) {
+            // Transient error: short red pulse at tile or building level
+            if (hasTileCoords) {
+              const tilePx = bPx + localCoords!.x * TILE
+              const tilePy = bPy + localCoords!.y * TILE
+              this.occupancyAnimator.animateToolError(event.target.building_id, tilePx, tilePy, TILE)
+            } else {
+              this.occupancyAnimator.animateError(event.target.building_id, bPx, bPy, bW, bH)
+            }
+          } else if (hasTileCoords) {
+            // Normal tool use: yellow flash at tile
+            const tilePx = bPx + localCoords!.x * TILE
+            const tilePy = bPy + localCoords!.y * TILE
+            this.occupancyAnimator.animateToolAtTile(event.target.building_id, tilePx, tilePy, TILE)
+          } else {
+            this.occupancyAnimator.animateWork(event.target.building_id, bPx, bPy, bW, bH)
+          }
+        } else if (event.type === 'file_create') {
+          // File create: spawn glow at exact tile position
+          if (hasTileCoords) {
+            const tilePx = bPx + localCoords!.x * TILE
+            const tilePy = bPy + localCoords!.y * TILE
+            this.occupancyAnimator.animateTileCreate(event.target.building_id, tilePx, tilePy, TILE)
+          } else {
+            this.occupancyAnimator.animateWork(event.target.building_id, bPx, bPy, bW, bH)
+          }
         } else if (event.type === 'file_edit') {
-          this.occupancyAnimator.animateRename(event.target.building_id, px, py, w, h)
+          // File edit: green pulse on exact tile
+          if (hasTileCoords) {
+            const tilePx = bPx + localCoords!.x * TILE
+            const tilePy = bPy + localCoords!.y * TILE
+            this.occupancyAnimator.animateTileEdit(event.target.building_id, tilePx, tilePy, TILE)
+          } else {
+            this.occupancyAnimator.animateRename(event.target.building_id, bPx, bPy, bW, bH)
+          }
+        } else if (event.type === 'file_delete') {
+          // File delete: shrinking red at tile or building level
+          if (hasTileCoords) {
+            const tilePx = bPx + localCoords!.x * TILE
+            const tilePy = bPy + localCoords!.y * TILE
+            this.occupancyAnimator.animateDelete(event.target.building_id, tilePx, tilePy, TILE, TILE)
+          } else {
+            this.occupancyAnimator.animateDelete(event.target.building_id, bPx, bPy, bW, bH)
+          }
         } else if (event.type === 'error_spawn') {
-          this.occupancyAnimator.animateError(event.target.building_id, px, py, w, h)
+          this.occupancyAnimator.animateError(event.target.building_id, bPx, bPy, bW, bH)
         }
       }
     }
@@ -442,11 +504,25 @@ export class WorldRenderer {
     this._prevFollowId = followId
   }
 
+  /** Clear all cached/retained state across subsystems.
+   *  Called by bootstrap reset callback on scenario switch/restart. */
+  reset(): void {
+    this.tilemap?.reset()
+    this.agentManager?.reset()
+    this.monsterManager?.reset()
+    this.workItemMarkers?.reset()
+    this.heatOverlay?.reset()
+    this.occupancyAnimator?.reset()
+    this._prevFollowId = null
+    this._lastTelemetry = null
+  }
+
   resize(): void {
     this.camera?.resize(this.app.canvas.width, this.app.canvas.height)
   }
 
   destroy(): void {
+    setOnResetCallback(null)
     this.unsubscribeEvents?.()
     this.unsubscribeSelection?.()
     this.camera?.destroy()

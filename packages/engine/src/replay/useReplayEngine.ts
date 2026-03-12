@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ScenarioData } from '@multiverse/shared'
 import { ReplayEngine, type ReplayEngineState } from './engine'
-import { useEventStore } from '../stores/eventStore'
+import { useEventStore, setDispatchPlaybackSpeed } from '../stores/eventStore'
 import { useUniverseStore } from '../stores/universeStore'
 import { useAgentStore } from '../stores/agentStore'
 import { bootstrapReplay } from './bootstrap'
@@ -37,6 +37,13 @@ const INITIAL_STATE: ReplayEngineState = {
 
 const TILE_SIZE = 32
 const CHUNK_SIZE = 64
+
+/** Remove all agents from the map when playback finishes */
+function clearAgentsOnComplete() {
+  useAgentStore.getState().batchUpdate((agentMap) => {
+    agentMap.clear()
+  })
+}
 
 export function useReplayEngine() {
   const [state, setState] = useState<ReplayEngineState>(INITIAL_STATE)
@@ -91,6 +98,7 @@ export function useReplayEngine() {
         },
         onStateChange: (newState) => {
           setState({ ...newState })
+          if (newState.playbackState === 'complete') clearAgentsOnComplete()
         },
       })
       engineRef.current = engine
@@ -126,21 +134,22 @@ export function useReplayEngine() {
               }
               // Send snapshot data so worker can produce typed diffs
               sendSnapshotToWorker(worker)
-              // Start playback automatically once loaded
-              workerRef.current?.postMessage({ type: 'start', speed: 1 })
-              setState((s) => ({ ...s, playbackState: 'playing', speed: 1, totalEvents: scenario.events.length }))
+              // Start paused — user must click Play
+              setState((s) => ({ ...s, playbackState: 'paused', speed: 1, totalEvents: scenario.events.length }))
               break
             }
             case 'progress': {
               const nextIndex = msg.current
               const total = msg.total
+              const isComplete = nextIndex >= total
               setState((prev) => ({
                 ...prev,
                 currentEventIndex: nextIndex,
                 totalEvents: total,
                 progress: total > 0 ? nextIndex / total : 0,
-                playbackState: nextIndex >= total ? 'complete' : (prev.playbackState === 'idle' ? 'playing' : prev.playbackState),
+                playbackState: isComplete ? 'complete' : (prev.playbackState === 'idle' ? 'playing' : prev.playbackState),
               }))
+              if (isComplete) clearAgentsOnComplete()
               break
             }
             case 'diff': {
@@ -189,13 +198,15 @@ export function useReplayEngine() {
                         }
                         if (payload.progress) {
                           const { current, total } = payload.progress
+                          const isComplete = current >= total
                           setState((prev) => ({
                             ...prev,
                             currentEventIndex: current,
                             totalEvents: total,
                             progress: total > 0 ? current / total : 0,
-                            playbackState: current >= total ? 'complete' : (prev.playbackState === 'idle' ? 'playing' : prev.playbackState),
+                            playbackState: isComplete ? 'complete' : (prev.playbackState === 'idle' ? 'playing' : prev.playbackState),
                           }))
+                          if (isComplete) clearAgentsOnComplete()
                         }
                       }
                     }
@@ -220,13 +231,15 @@ export function useReplayEngine() {
               // Update progress from combined envelope
               if (payload.progress) {
                 const { current, total } = payload.progress
+                const isComplete = current >= total
                 setState((prev) => ({
                   ...prev,
                   currentEventIndex: current,
                   totalEvents: total,
                   progress: total > 0 ? current / total : 0,
-                  playbackState: current >= total ? 'complete' : (prev.playbackState === 'idle' ? 'playing' : prev.playbackState),
+                  playbackState: isComplete ? 'complete' : (prev.playbackState === 'idle' ? 'playing' : prev.playbackState),
                 }))
+                if (isComplete) clearAgentsOnComplete()
               }
               break
             }
@@ -309,6 +322,8 @@ export function useReplayEngine() {
     pendingEventsRef.current = []
     if (isV4Replay) {
       workerRef.current?.postMessage({ type: 'restart' })
+      // Re-send snapshot so worker re-initializes SoA state
+      if (workerRef.current) sendSnapshotToWorker(workerRef.current)
       setState((s) => ({ ...s, playbackState: 'idle', currentEventIndex: 0, progress: 0 }))
     } else {
       engineRef.current?.restart()
@@ -327,6 +342,7 @@ export function useReplayEngine() {
   }, [isV4Replay])
 
   const setSpeed = useCallback((speed: number) => {
+    setDispatchPlaybackSpeed(speed)
     if (isV4Replay) {
       workerRef.current?.postMessage({ type: 'set_speed', speed })
       setState((s) => ({ ...s, speed }))

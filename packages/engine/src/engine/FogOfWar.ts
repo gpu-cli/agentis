@@ -27,6 +27,34 @@ import { generateCoastlinePolygon, drawPolygon, hashString, type IslandShapeTrai
 const TILE_SIZE = 32
 const CHUNK_SIZE = 64
 
+// ---------------------------------------------------------------------------
+// District wall geometry constants — must match TilemapManager exactly
+// ---------------------------------------------------------------------------
+const WALL_INSET = 6
+const WALL_TILE_SIZE = 14
+
+/**
+ * Compute the snapped wall rectangle for a district.
+ * Mirrors TilemapManager.computeWallRect() so the fog reveal hole aligns
+ * precisely with the rendered district walls and ground fill.
+ */
+function computeWallRect(
+  pixelPos: { x: number; y: number },
+  boundsW: number,
+  boundsH: number,
+): { x: number; y: number; w: number; h: number } {
+  const rawW = boundsW - WALL_INSET * 2
+  const rawH = boundsH - WALL_INSET * 2
+  const cols = Math.max(1, Math.floor(rawW / WALL_TILE_SIZE))
+  const rows = Math.max(1, Math.floor(rawH / WALL_TILE_SIZE))
+  return {
+    x: pixelPos.x + WALL_INSET,
+    y: pixelPos.y + WALL_INSET,
+    w: cols * WALL_TILE_SIZE,
+    h: rows * WALL_TILE_SIZE,
+  }
+}
+
 type FogState = 'void' | 'silhouette' | 'fog' | 'visible'
 
 export class FogOfWar {
@@ -264,16 +292,25 @@ export class FogOfWar {
       }
     }
 
-    // Selected district reveal
+    // Selected district reveal — use the same snapped wall rect as TilemapManager
+    // so the fog cutout aligns precisely with the rendered walls / ground.
     if (selectedEntityType === 'district' && selectedEntityId) {
       const district = districts.get(selectedEntityId)
       if (district) {
         const dPos = this.worldToPixel(district.position)
         const dw = district.bounds.width * TILE_SIZE
         const dh = district.bounds.height * TILE_SIZE
-        const pad = 36
-        const bottomExtra = 32
-        this.revealMask.roundRect(dPos.x - pad, dPos.y - pad, dw + pad * 2, dh + pad + pad + bottomExtra, 10)
+        const wallRect = computeWallRect(dPos, dw, dh)
+        // Pad around the wall rect (not the outer district bounds)
+        const pad = 20
+        const bottomExtra = 32 // extra for the name banner below walls
+        this.revealMask.roundRect(
+          wallRect.x - pad,
+          wallRect.y - pad,
+          wallRect.w + pad * 2,
+          wallRect.h + pad + pad + bottomExtra,
+          10,
+        )
         this.revealMask.fill({ color: 0xffffff, alpha: 1 })
       }
     }

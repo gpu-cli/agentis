@@ -173,8 +173,8 @@ export function toScenarioData(snapshot: WorldModelSnapshot): ScenarioData {
 
 function toPlanetSnapshot(
   snapshot: WorldModelSnapshot,
-  lifecycles: Map<string, FileLifecycle>,
-  pathMap: Map<string, PathLocation>,
+  _lifecycles: Map<string, FileLifecycle>,
+  _pathMap: Map<string, PathLocation>,
 ): PlanetSnapshot {
   const islands: Island[] = []
   const districts: District[] = []
@@ -193,38 +193,10 @@ function toPlanetSnapshot(
       districts.push(toDistrict(wmDistrict, wmIsland))
 
       for (const wmBuilding of wmDistrict.buildings) {
-        // Count baseline files for this building
-        let baselineCount = 0
-        const wmWorkUnits = wmBuilding.workUnitIds
-          .map(id => snapshot.workUnits.find(wu => wu.id === id))
-          .filter(Boolean)
-
-        for (let i = 0; i < wmWorkUnits.length; i++) {
-          const wu = wmWorkUnits[i]!
-          for (const path of wu.paths) {
-            const lifecycle = lifecycles.get(path)
-            if (lifecycle === 'preexisting') {
-              // Seed this tile in the snapshot — it existed before the session
-              const loc = pathMap.get(path)
-              if (loc) {
-                tiles.push({
-                  id: loc.tileId,
-                  building_id: wmBuilding.id,
-                  file_name: loc.fileName,
-                  position: { x: loc.tileIndex % 3, y: Math.floor(loc.tileIndex / 3) },
-                  state: 'building', // Pre-existing files start as built
-                  last_modified: wu.stats.lastTouched || snapshot.generatedAt,
-                })
-                baselineCount++
-              }
-            }
-            // created_in_session files are NOT seeded — they'll appear via events
-            // deleted_in_session files are NOT seeded — they appear as ruins via events
-          }
-        }
-
-        buildingBaselineCounts.set(wmBuilding.id, baselineCount)
-        buildings.push(toBuilding(wmBuilding, wmDistrict, wmIsland, baselineCount))
+        // All buildings start empty — tiles appear via events during replay.
+        // This ensures buildings visually grow as the agent creates/edits files.
+        buildingBaselineCounts.set(wmBuilding.id, 0)
+        buildings.push(toBuilding(wmBuilding, wmDistrict, wmIsland, 0))
       }
     }
   }
@@ -434,25 +406,106 @@ function seededRand(seed: number): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-function toAgent(actor: ActorRef, snapshot: WorldModelSnapshot, index: number): Agent {
-  const island = snapshot.world.islands[0]
-  const islandW = island ? island.layout.width : 20
-  const islandH = island ? island.layout.height : 20
-  const centerX = island ? island.layout.x + Math.floor(islandW / 2) : 10
-  const centerY = island ? island.layout.y + Math.floor(islandH / 2) : 10
+/**
+ * Determine the most specific work location for an agent by tracing
+ * actor → work units → buildings → districts → islands.
+ * Returns absolute (world-space) coordinates.
+ */
+function findAgentWorkLocation(
+  actorId: string,
+  snapshot: WorldModelSnapshot,
+): { x: number; y: number } | undefined {
+  // Collect all work units this actor touched
+  const touchedWUs = snapshot.workUnits.filter((wu) => wu.stats.actors.includes(actorId))
+  if (touchedWUs.length === 0) return undefined
 
-  // Scatter agents randomly within the island interior using seeded randomness.
-  // Bias toward center (50–80% of bounds range) so agents don't spawn on edges.
+  const touchedWUIds = new Set(touchedWUs.map((wu) => wu.id))
+
+  // Find all buildings/districts/islands containing those work units
+  const buildingSet = new Set<string>()
+  const districtSet = new Set<string>()
+  const islandSet = new Set<string>()
+
+  interface BuildingLoc {
+    island: WMIsland
+    district: WMDistrict
+    building: WMBuilding
+  }
+  const buildingLocs: BuildingLoc[] = []
+
+  for (const island of snapshot.world.islands) {
+    for (const district of island.districts) {
+      for (const building of district.buildings) {
+        if (building.workUnitIds.some((id) => touchedWUIds.has(id))) {
+          buildingSet.add(building.id)
+          districtSet.add(district.id)
+          islandSet.add(island.id)
+          buildingLocs.push({ island, district, building })
+        }
+      }
+    }
+  }
+
+  if (buildingLocs.length === 0) return undefined
+
+  // Most specific: single building → position at that building's center
+  if (buildingSet.size === 1) {
+    const loc = buildingLocs[0]!
+    return {
+      x:
+        loc.island.layout.x +
+        loc.district.layout.x +
+        loc.building.layout.x +
+        Math.floor(loc.building.layout.width / 2),
+      y:
+        loc.island.layout.y +
+        loc.district.layout.y +
+        loc.building.layout.y +
+        Math.floor(loc.building.layout.height / 2),
+    }
+  }
+
+  // Single district → position at district center
+  if (districtSet.size === 1) {
+    const loc = buildingLocs[0]!
+    return {
+      x: loc.island.layout.x + loc.district.layout.x + Math.floor(loc.district.layout.width / 2),
+      y: loc.island.layout.y + loc.district.layout.y + Math.floor(loc.district.layout.height / 2),
+    }
+  }
+
+  // Single island → position at island center
+  if (islandSet.size === 1) {
+    const loc = buildingLocs[0]!
+    return {
+      x: loc.island.layout.x + Math.floor(loc.island.layout.width / 2),
+      y: loc.island.layout.y + Math.floor(loc.island.layout.height / 2),
+    }
+  }
+
+  // Multiple islands — fallback to first island center
+  const firstIsland = snapshot.world.islands[0]
+  if (firstIsland) {
+    return {
+      x: firstIsland.layout.x + Math.floor(firstIsland.layout.width / 2),
+      y: firstIsland.layout.y + Math.floor(firstIsland.layout.height / 2),
+    }
+  }
+
+  return undefined
+}
+
+function toAgent(actor: ActorRef, snapshot: WorldModelSnapshot, index: number): Agent {
+  // Position agent at their most specific work location
+  const workLoc = findAgentWorkLocation(actor.id, snapshot)
+
+  // Add seeded jitter so agents don't stack on the same spot
   const seed = djb2(actor.id + ':pos')
-  const rx = seededRand(seed)        // 0–1
-  const ry = seededRand(seed + 9973) // 0–1, different seed
-  const marginFrac = 0.15 // keep agents out of the outer 15%
-  const x = island
-    ? island.layout.x + Math.floor(islandW * (marginFrac + rx * (1 - 2 * marginFrac)))
-    : centerX
-  const y = island
-    ? island.layout.y + Math.floor(islandH * (marginFrac + ry * (1 - 2 * marginFrac)))
-    : centerY
+  const jitterX = Math.floor(seededRand(seed) * 3) - 1 // -1, 0, or 1
+  const jitterY = Math.floor(seededRand(seed + 9973) * 3) - 1
+
+  const x = workLoc ? workLoc.x + jitterX : 10
+  const y = workLoc ? workLoc.y + jitterY : 10
 
   // TODO: Make agent type dynamic based on transcript source detection
   // For now hardcode to 'claude' so the sprite renders correctly
@@ -531,6 +584,8 @@ function opKindToEventType(kind: OperationKind): { eventKind: 'mutation' | 'fx';
       return { eventKind: 'mutation', eventType: 'file_edit' }
     case 'file_create':
       return { eventKind: 'mutation', eventType: 'file_create' }
+    case 'file_delete':
+      return { eventKind: 'mutation', eventType: 'file_delete' }
     case 'file_read':
       return { eventKind: 'fx', eventType: 'tool_use', toolId: 'tool_file_read' }
     case 'search':
@@ -556,6 +611,8 @@ interface PathLocation {
   tileId: string
   /** Index of this tile within the building (for positioning) */
   tileIndex: number
+  /** Width of the building's planned footprint (for tile grid layout) */
+  footprintWidth: number
   /** Short file name (basename) */
   fileName: string
 }
@@ -569,6 +626,9 @@ function buildPathToBuildingMap(snapshot: WorldModelSnapshot): Map<string, PathL
   for (const island of snapshot.world.islands) {
     for (const district of island.districts) {
       for (const building of district.buildings) {
+        // Compute planned footprint width for tile grid layout
+        const plannedFileCount = building.workUnitIds.length
+        const plannedFootprint = computeFootprint(plannedFileCount)
         let tileIndex = 0
         for (const wuId of building.workUnitIds) {
           const wu = snapshot.workUnits.find(w => w.id === wuId)
@@ -583,6 +643,7 @@ function buildPathToBuildingMap(snapshot: WorldModelSnapshot): Map<string, PathL
               islandId: island.id,
               tileId,
               tileIndex,
+              footprintWidth: plannedFootprint.width,
               fileName,
             })
             tileIndex++
@@ -626,7 +687,7 @@ const MAX_REPLAY_EVENTS = 5000
 function toOperationEvents(
   snapshot: WorldModelSnapshot,
   operations: CanonicalOperation[],
-  lifecycles: Map<string, FileLifecycle>,
+  _lifecycles: Map<string, FileLifecycle>,
   pathMap: Map<string, PathLocation>,
 ): AgentEvent[] {
   const events: AgentEvent[] = []
@@ -634,13 +695,15 @@ function toOperationEvents(
 
   // Track last-known building per agent for move events
   const agentLastBuilding = new Map<string, string>()
-  // Track which tiles have been created — pre-populate with baseline tiles
-  // (they exist in the snapshot, so we don't need to emit file_create for them)
+  // Track which tiles have been created — starts empty so ALL files get
+  // file_create events during replay (buildings grow from empty)
   const createdTiles = new Set<string>()
-  for (const [path, lifecycle] of lifecycles) {
-    if (lifecycle === 'preexisting') {
-      const loc = pathMap.get(path)
-      if (loc) createdTiles.add(loc.tileId)
+
+  // Build span lookup for dual-phase event emission (F2.1)
+  const spanByOpId = new Map<string, import('./types').ActionSpan>()
+  if (snapshot.actionSpans) {
+    for (const s of snapshot.actionSpans) {
+      spanByOpId.set(s.operationId, s)
     }
   }
 
@@ -649,15 +712,18 @@ function toOperationEvents(
     .filter(op => opKindToEventType(op.kind) !== null || op.targetPath !== null)
     .sort((a, b) => a.timestamp - b.timestamp)
 
-  // Track open error monsters for combat resolution
-  let monsterCounter = 0
-  const openMonsters: { monsterId: string; agentId: string; spawnTimestamp: number; buildingId?: string; districtId?: string; islandId?: string }[] = []
+  // Monster spawning is reserved for explicit incident-grade events only.
+  // Routine tool failures (is_error on tool_result) are rendered as transient
+  // red tool_use FX, not persistent monster/combat entities.
 
   for (const op of actionableOps) {
     if (events.length >= MAX_REPLAY_EVENTS) break
     const agentId = op.actor.id
     const mapping = opKindToEventType(op.kind)
     if (!mapping) continue
+
+    // F2.1: Look up span for this operation
+    const span = spanByOpId.get(op.id)
 
     // Find building + tile for this operation's target path (normalize to match work-unit paths)
     let target: PathLocation | undefined
@@ -685,54 +751,89 @@ function toOperationEvents(
           district_id: target.districtId,
           island_id: target.islandId,
         },
-        metadata: {},
+        metadata: {
+          local: { x: target.tileIndex % target.footprintWidth, y: Math.floor(target.tileIndex / target.footprintWidth) },
+        },
       })
     }
 
-    // Error operations: emit error_spawn + combat_start instead of the normal event
+    // F2.1: Span-driven visual beat — emit tool_use at span start for mutations
+    if (span && mapping.eventKind === 'mutation' && target) {
+      events.push({
+        id: `evt_${seq++}`,
+        schema_version: 1,
+        dedupe_key: `op:${op.id}:span_start`,
+        agent_id: agentId,
+        planet_id: snapshot.world.id,
+        seq,
+        timestamp: span.startMs,
+        kind: 'fx',
+        type: 'tool_use',
+        source: 'agent_runtime',
+        target: {
+          building_id: target.buildingId,
+          district_id: target.districtId,
+          island_id: target.islandId,
+          tool_id: 'tool_code_edit',
+        },
+        metadata: {
+          tool_name: op.toolName ?? 'Edit',
+          tool: op.toolName ?? 'Edit',
+          local: { x: target.tileIndex % target.footprintWidth, y: Math.floor(target.tileIndex / target.footprintWidth) },
+          span_phase: 'start',
+        },
+      })
+    }
+
+    // F1.2: For long-running spans with progress, emit periodic progress pulses
+    if (span && span.hasProgress && target) {
+      const spanDurationMs = span.endMs - span.startMs
+      if (spanDurationMs >= 1000) {
+        const PROGRESS_INTERVAL_MS = 500 // pulse every 500ms of replay time
+        const pulseCount = Math.min(
+          Math.floor(spanDurationMs / PROGRESS_INTERVAL_MS) - 1,
+          10, // cap at 10 intermediate pulses
+        )
+
+        for (let p = 1; p <= pulseCount; p++) {
+          if (events.length >= MAX_REPLAY_EVENTS) break
+
+          const progressTs = span.startMs + p * PROGRESS_INTERVAL_MS
+          if (progressTs >= span.endMs) break
+
+          events.push({
+            id: `evt_${seq++}`,
+            schema_version: 1,
+            dedupe_key: `op:${op.id}:progress_${p}`,
+            agent_id: agentId,
+            planet_id: snapshot.world.id,
+            seq,
+            timestamp: progressTs,
+            kind: 'fx',
+            type: 'tool_use',
+            source: 'agent_runtime',
+            target: {
+              building_id: target.buildingId,
+              district_id: target.districtId,
+              island_id: target.islandId,
+              tool_id: 'tool_terminal',
+            },
+            metadata: {
+              tool_name: op.toolName ?? 'Bash',
+              tool: op.toolName ?? 'Bash',
+              local: { x: target.tileIndex % target.footprintWidth, y: Math.floor(target.tileIndex / target.footprintWidth) },
+              span_phase: 'progress',
+              progress_index: p,
+            },
+          })
+        }
+      }
+    }
+
+    // Tool errors spawn a monster. The monster appears with full health, its
+    // health bar auto-drains in the event store, and then it fades out.
     if (op.isError) {
-      monsterCounter++
-      const monsterId = `monster_err_${monsterCounter}`
-      let buildingId = target?.buildingId ?? agentLastBuilding.get(agentId)
-
-      // If no building found yet, look ahead for the next building this agent touches
-      if (!buildingId) {
-        for (let fi = actionableOps.indexOf(op) + 1; fi < actionableOps.length; fi++) {
-          const futureOp = actionableOps[fi]!
-          if (futureOp.actor.id !== agentId || !futureOp.targetPath) continue
-          const normalized = normalizeOpPath(futureOp.targetPath, snapshot)
-          const futureTarget = pathMap.get(normalized)
-          if (futureTarget) { buildingId = futureTarget.buildingId; break }
-        }
-      }
-
-      // Last resort: use the first building in the snapshot
-      if (!buildingId) {
-        for (const isl of snapshot.world.islands) {
-          for (const dist of isl.districts) {
-            if (dist.buildings.length > 0) { buildingId = dist.buildings[0]!.id; break }
-          }
-          if (buildingId) break
-        }
-      }
-
-      // Resolve district/island for the error building (may differ from op's target)
-      let errorDistrictId = target?.districtId
-      let errorIslandId = target?.islandId
-      if (buildingId && !errorDistrictId) {
-        for (const isl of snapshot.world.islands) {
-          for (const dist of isl.districts) {
-            for (const bld of dist.buildings) {
-              if (bld.id === buildingId) {
-                errorDistrictId = dist.id
-                errorIslandId = isl.id
-              }
-            }
-          }
-        }
-      }
-
-      // error_spawn
+      const monsterId = `monster_${op.id}`
       events.push({
         id: `evt_${seq++}`,
         schema_version: 1,
@@ -741,68 +842,24 @@ function toOperationEvents(
         planet_id: snapshot.world.id,
         seq,
         timestamp: op.timestamp,
-        kind: 'fx',
+        kind: 'mutation',
         type: 'error_spawn',
         source: 'agent_runtime',
         target: {
           monster_id: monsterId,
-          building_id: buildingId,
-          ...(errorDistrictId ? { district_id: errorDistrictId } : {}),
-          ...(errorIslandId ? { island_id: errorIslandId } : {}),
+          ...(target ? {
+            building_id: target.buildingId,
+            district_id: target.districtId,
+            island_id: target.islandId,
+          } : {}),
         },
         metadata: {
           severity: 'error',
-          message: op.summary ?? op.toolName ?? 'Error detected',
+          message: op.summary ?? 'Tool failed',
+          tool_name: op.toolName,
         },
       })
-
-      // combat_start 500ms later
-      events.push({
-        id: `evt_${seq++}`,
-        schema_version: 1,
-        dedupe_key: `op:${op.id}:combat_start`,
-        agent_id: agentId,
-        planet_id: snapshot.world.id,
-        seq,
-        timestamp: op.timestamp + 500,
-        kind: 'fx',
-        type: 'combat_start',
-        source: 'agent_runtime',
-        target: { monster_id: monsterId, building_id: buildingId },
-        metadata: {},
-      })
-
-      openMonsters.push({ monsterId, agentId, spawnTimestamp: op.timestamp, buildingId, districtId: errorDistrictId, islandId: errorIslandId })
       continue
-    }
-
-    // Resolve open monsters when the agent does constructive work 3+ seconds after spawn
-    const fixTypes: string[] = ['file_edit', 'file_create', 'tool_use', 'task_complete']
-    for (let mi = openMonsters.length - 1; mi >= 0; mi--) {
-      const om = openMonsters[mi]!
-      if (om.agentId !== agentId) continue
-      if (fixTypes.includes(mapping.eventType) && op.timestamp - om.spawnTimestamp >= 3000) {
-        events.push({
-          id: `evt_${seq++}`,
-          schema_version: 1,
-          dedupe_key: `op:${op.id}:combat_end_${om.monsterId}`,
-          agent_id: agentId,
-          planet_id: snapshot.world.id,
-          seq,
-          timestamp: op.timestamp + 200,
-          kind: 'fx',
-          type: 'combat_end',
-          source: 'agent_runtime',
-          target: {
-            monster_id: om.monsterId,
-            ...(om.buildingId ? { building_id: om.buildingId } : {}),
-            ...(om.districtId ? { district_id: om.districtId } : {}),
-            ...(om.islandId ? { island_id: om.islandId } : {}),
-          },
-          metadata: { outcome: 'defeated' },
-        })
-        openMonsters.splice(mi, 1)
-      }
     }
 
     // For file-targeted mutations: ensure a file_create event precedes any file_edit
@@ -830,13 +887,17 @@ function toOperationEvents(
           },
           metadata: {
             path: op.targetPath ?? target.fileName,
-            local: { x: target.tileIndex % 3, y: Math.floor(target.tileIndex / 3) },
+            local: { x: target.tileIndex % target.footprintWidth, y: Math.floor(target.tileIndex / target.footprintWidth) },
           },
         })
       }
     }
 
     // Emit the operation event (with tile_id when targeting a file)
+    // Include local tile coordinates for tile-level FX (F3.2)
+    const localCoords = target
+      ? { x: target.tileIndex % target.footprintWidth, y: Math.floor(target.tileIndex / target.footprintWidth) }
+      : undefined
     events.push({
       id: `evt_${seq++}`,
       schema_version: 1,
@@ -844,7 +905,7 @@ function toOperationEvents(
       agent_id: agentId,
       planet_id: snapshot.world.id,
       seq,
-      timestamp: op.timestamp,
+      timestamp: (span && mapping.eventKind === 'mutation') ? span.endMs : op.timestamp,
       kind: mapping.eventKind,
       type: mapping.eventType,
       source: 'agent_runtime',
@@ -859,31 +920,8 @@ function toOperationEvents(
         ...(op.targetPath ? { path: op.targetPath } : {}),
         ...(op.toolName ? { tool_name: op.toolName, tool: op.toolName } : {}),
         ...(op.summary ? { summary: op.summary } : {}),
+        ...(localCoords ? { local: localCoords } : {}),
       },
-    })
-  }
-
-  // Close any remaining open monsters at end of stream
-  for (const om of openMonsters) {
-    const lastTs = events.length > 0 ? events[events.length - 1]!.timestamp + 1000 : Date.now()
-    events.push({
-      id: `evt_${seq++}`,
-      schema_version: 1,
-      dedupe_key: `final_combat_end_${om.monsterId}`,
-      agent_id: om.agentId,
-      planet_id: snapshot.world.id,
-      seq,
-      timestamp: lastTs,
-      kind: 'fx',
-      type: 'combat_end',
-      source: 'agent_runtime',
-      target: {
-        monster_id: om.monsterId,
-        ...(om.buildingId ? { building_id: om.buildingId } : {}),
-        ...(om.districtId ? { district_id: om.districtId } : {}),
-        ...(om.islandId ? { island_id: om.islandId } : {}),
-      },
-      metadata: { outcome: 'defeated' },
     })
   }
 
@@ -896,19 +934,13 @@ function toOperationEvents(
  */
 function toWorkUnitEvents(
   snapshot: WorldModelSnapshot,
-  lifecycles: Map<string, FileLifecycle>,
+  _lifecycles: Map<string, FileLifecycle>,
   pathMap: Map<string, PathLocation>,
 ): AgentEvent[] {
   const events: AgentEvent[] = []
   let seq = 0
-  // Pre-populate with baseline tiles (preexisting files already in snapshot)
+  // Starts empty — all files get file_create events (buildings grow from empty)
   const createdTiles = new Set<string>()
-  for (const [path, lifecycle] of lifecycles) {
-    if (lifecycle === 'preexisting') {
-      const loc = pathMap.get(path)
-      if (loc) createdTiles.add(loc.tileId)
-    }
-  }
 
   // Sort work units by last touched time for temporal ordering
   const sortedUnits = [...snapshot.workUnits]
@@ -982,7 +1014,7 @@ function toWorkUnitEvents(
           },
           metadata: {
             path: path,
-            local: { x: loc.tileIndex % 3, y: Math.floor(loc.tileIndex / 3) },
+            local: { x: loc.tileIndex % loc.footprintWidth, y: Math.floor(loc.tileIndex / loc.footprintWidth) },
           },
         })
       }
@@ -1072,6 +1104,11 @@ function toAgentEvents(
  * Append synthetic events at the end of the stream to ensure every building
  * reaches its planned_file_count. This guarantees buildings are fully complete
  * by the time replay finishes.
+ *
+ * When operations are available (teams transcripts), synthetic events are
+ * spread over the last 10% of the replay timeline to avoid a visual burst.
+ * Each synthetic tile_create is also preceded by a move event to its building
+ * so the agent visually travels to each remaining building.
  */
 function appendCompletionEvents(
   snapshot: WorldModelSnapshot,
@@ -1079,74 +1116,111 @@ function appendCompletionEvents(
   lifecycles: Map<string, FileLifecycle>,
   pathMap: Map<string, PathLocation>,
 ): AgentEvent[] {
-  // Determine which tiles were created (in snapshot baseline or via events)
+  // Determine which tiles were created via events during replay
   const existingTileIds = new Set<string>()
-
-  // Baseline tiles (pre-seeded in snapshot)
-  for (const [path, lifecycle] of lifecycles) {
-    if (lifecycle === 'preexisting') {
-      const loc = pathMap.get(path)
-      if (loc) existingTileIds.add(loc.tileId)
-    }
-  }
-
-  // Tiles created via events
   for (const event of events) {
     if (event.type === 'file_create' && event.target?.tile_id) {
       existingTileIds.add(event.target.tile_id)
     }
   }
 
-  // Find the last event timestamp for offset
-  const lastTs = events.length > 0
-    ? events[events.length - 1]!.timestamp
-    : snapshot.generatedAt
+  // Collect missing tiles (excluding deleted files)
+  const missingTiles: { path: string; loc: PathLocation }[] = []
+  for (const [path, loc] of pathMap) {
+    if (existingTileIds.has(loc.tileId)) continue
+    const lifecycle = lifecycles.get(path)
+    if (lifecycle === 'deleted_in_session') continue
+    missingTiles.push({ path, loc })
+  }
+
+  // Find the replay time range for spreading synthetic events
+  const firstTs = events.length > 0 ? events[0]!.timestamp : snapshot.generatedAt
+  const lastTs = events.length > 0 ? events[events.length - 1]!.timestamp : snapshot.generatedAt
+  const totalDuration = Math.max(lastTs - firstTs, 1000) // at least 1s
+
+  // Spread synthetic tile creations over the last 10% of the timeline
+  // with minimum 200ms spacing so they're perceptible during replay
+  const spreadStart = lastTs
+  const spreadDuration = totalDuration * 0.1
+  const stepMs = missingTiles.length > 1
+    ? Math.max(200, spreadDuration / missingTiles.length)
+    : 200
 
   // Pick a default agent for synthetic events
   const defaultAgentId = snapshot.actors.find(a => a.kind === 'agent')?.id ?? snapshot.actors[0]?.id ?? 'agent_synthetic'
 
   let seq = events.length > 0 ? events[events.length - 1]!.seq + 1 : 1
   const synthetic: AgentEvent[] = []
-  let synthesizedCount = 0
 
-  // Check every file across all buildings
-  for (const [path, loc] of pathMap) {
-    if (existingTileIds.has(loc.tileId)) continue
-    // This file has no tile yet — synthesize creation
-    const lifecycle = lifecycles.get(path)
-    if (lifecycle === 'deleted_in_session') continue // Don't create tiles for deleted files
+  // Group missing tiles by building so we can emit one move per building
+  const tilesByBuilding = new Map<string, { path: string; loc: PathLocation }[]>()
+  for (const t of missingTiles) {
+    const arr = tilesByBuilding.get(t.loc.buildingId) ?? []
+    arr.push(t)
+    tilesByBuilding.set(t.loc.buildingId, arr)
+  }
 
-    synthesizedCount++
+  let tileCounter = 0
+  for (const [buildingId, tiles] of tilesByBuilding) {
+    const first = tiles[0]!
+    const moveTs = spreadStart + tileCounter * stepMs
+
+    // Move agent to the building
     synthetic.push({
-      id: `evt_synth_${seq}`,
+      id: `evt_synth_move_${seq}`,
       schema_version: 1,
-      dedupe_key: `synth:complete:${loc.tileId}`,
+      dedupe_key: `synth:move:${buildingId}`,
       agent_id: defaultAgentId,
       planet_id: snapshot.world.id,
       seq: seq++,
-      timestamp: lastTs + synthesizedCount, // stagger by 1ms each
-      kind: 'mutation',
-      type: 'file_create',
+      timestamp: moveTs,
+      kind: 'fx',
+      type: 'move',
       source: 'synthetic',
       target: {
-        tile_id: loc.tileId,
-        building_id: loc.buildingId,
-        district_id: loc.districtId,
-        island_id: loc.islandId,
+        building_id: first.loc.buildingId,
+        district_id: first.loc.districtId,
+        island_id: first.loc.islandId,
       },
-      metadata: {
-        path,
-        local: { x: loc.tileIndex % 3, y: Math.floor(loc.tileIndex / 3) },
-        synthetic: true,
-      },
+      metadata: { synthetic: true },
     })
+
+    // Emit file_create for each tile in this building
+    for (const { path, loc } of tiles) {
+      const tileTs = spreadStart + tileCounter * stepMs + 50 // 50ms after move
+      tileCounter++
+
+      synthetic.push({
+        id: `evt_synth_${seq}`,
+        schema_version: 1,
+        dedupe_key: `synth:complete:${loc.tileId}`,
+        agent_id: defaultAgentId,
+        planet_id: snapshot.world.id,
+        seq: seq++,
+        timestamp: tileTs,
+        kind: 'mutation',
+        type: 'file_create',
+        source: 'synthetic',
+        target: {
+          tile_id: loc.tileId,
+          building_id: loc.buildingId,
+          district_id: loc.districtId,
+          island_id: loc.islandId,
+        },
+        metadata: {
+          path,
+          local: { x: loc.tileIndex % loc.footprintWidth, y: Math.floor(loc.tileIndex / loc.footprintWidth) },
+          synthetic: true,
+        },
+      })
+    }
   }
 
-  // Also emit file_edit events to transition all tiles to 'complete' state
-  // This happens slightly after all tiles are created
-  const completeOffset = synthesizedCount + 1
-  for (const [, loc] of pathMap) {
-    const lifecycle = lifecycles.get(loc.fileName)
+  // Emit file_edit to transition all tiles to 'complete' state
+  // This happens after all synthetic tiles are created
+  const completeTs = spreadStart + tileCounter * stepMs + 100
+  for (const [path, loc] of pathMap) {
+    const lifecycle = lifecycles.get(path)
     if (lifecycle === 'deleted_in_session') continue
 
     synthetic.push({
@@ -1156,7 +1230,7 @@ function appendCompletionEvents(
       agent_id: defaultAgentId,
       planet_id: snapshot.world.id,
       seq: seq++,
-      timestamp: lastTs + completeOffset,
+      timestamp: completeTs,
       kind: 'mutation',
       type: 'file_edit',
       source: 'synthetic',

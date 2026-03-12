@@ -58,6 +58,8 @@ export interface CanonicalOperation {
   branch: string | null
   /** Tool name (for tool operations) */
   toolName: string | null
+  /** Claude API tool_use block ID (for matching tool_result.tool_use_id) */
+  toolUseId?: string
   /** Minimal context (truncated, scrubbed) */
   summary: string | null
   /** Raw source reference for debugging */
@@ -102,6 +104,44 @@ export interface CanonicalWorkModel {
   operations: CanonicalOperation[]
   /** Files-per-tile scaling factor (computed from observedFileCount) */
   filesPerTile: number
+}
+
+// ---------------------------------------------------------------------------
+// 1b. Action Spans — timing-faithful tool_use/tool_result pairs
+// ---------------------------------------------------------------------------
+
+/** Minimum visual duration in ms so ultra-fast operations remain perceptible */
+export const PERCEPTUAL_FLOOR_MS = 200
+
+/**
+ * An ActionSpan represents the full duration of a single tool invocation,
+ * from tool_use emission to tool_result receipt. Derived from transcript
+ * timestamps to preserve real-world pacing during replay.
+ *
+ * Spans may overlap when the agent fires parallel tool calls (e.g. multiple
+ * Read calls in a batch). The replay system must preserve this concurrency.
+ */
+export interface ActionSpan {
+  /** The tool_use block ID (matches CanonicalOperation.toolUseId) */
+  toolUseId: string
+  /** Tool name (e.g. 'Read', 'Write', 'Bash') */
+  toolName: string
+  /** Start timestamp (ms epoch) — when tool_use was emitted */
+  startMs: number
+  /** End timestamp (ms epoch) — when tool_result was received */
+  endMs: number
+  /** Visual duration (ms) — max(endMs - startMs, PERCEPTUAL_FLOOR_MS) */
+  visualDurationMs: number
+  /** Whether this tool call mutates the world (Write/Edit/Delete = true, Read/Grep/Glob = false) */
+  isMutation: boolean
+  /** Target file path (if applicable) */
+  targetPath: string | null
+  /** Actor who initiated this tool call */
+  actorId: string
+  /** The canonical operation ID for cross-reference */
+  operationId: string
+  /** Whether a progress event was seen (long-running Bash commands) */
+  hasProgress: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -208,4 +248,6 @@ export interface WorldModelSnapshot {
   }
   /** Per-operation data for granular event generation (teams transcripts) */
   operations?: CanonicalOperation[]
+  /** Optional action spans for span-driven replay beats */
+  actionSpans?: ActionSpan[]
 }

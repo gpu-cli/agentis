@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { create } from 'zustand'
-import type { AgentEvent } from '@multiverse/shared'
+import type { AgentEvent, WorldCoord } from '@multiverse/shared'
 import type { WorkItemType, WorkItemPriority, MonsterSeverity } from '@multiverse/shared'
 import { useUniverseStore } from './universeStore'
 import { useAgentStore } from './agentStore'
@@ -347,6 +347,27 @@ const toolTimers = new Map<string, ReturnType<typeof setTimeout>>()
 /** Per-monster health drain timers for combat_end animation */
 const healthDrainTimers = new Map<string, ReturnType<typeof setInterval>>()
 
+/** Per-tile ruins removal timers (delete lifecycle: ruins → removed) */
+const tileRuinsTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/** Per-monster removal timers (defeated → removed from store after fade) */
+const monsterRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/** Per-monster auto-drain timers for transient error monsters */
+const autoDrainTimers = new Map<string, ReturnType<typeof setInterval>>()
+
+/** Current playback speed — scales all dispatch timers so animations match event pacing */
+let currentPlaybackSpeed = 1
+export function setDispatchPlaybackSpeed(speed: number): void {
+  currentPlaybackSpeed = Math.max(0.1, speed)
+}
+
+/** How long ruins remain visible before tile is removed from store */
+const RUINS_FADE_MS = 1500
+
+/** How long after defeat before monster is removed from store (matches renderer fade) */
+const MONSTER_REMOVE_DELAY_MS = 2000
+
 /** Clear all pending dispatch timers (called on store reset) */
 export function clearDispatchTimers(): void {
   for (const timer of toolTimers.values()) {
@@ -357,6 +378,19 @@ export function clearDispatchTimers(): void {
     clearInterval(timer)
   }
   healthDrainTimers.clear()
+  for (const timer of tileRuinsTimers.values()) {
+    clearTimeout(timer)
+  }
+  tileRuinsTimers.clear()
+  for (const timer of monsterRemoveTimers.values()) {
+    clearTimeout(timer)
+  }
+  monsterRemoveTimers.clear()
+  for (const timer of autoDrainTimers.values()) {
+    clearInterval(timer)
+  }
+  autoDrainTimers.clear()
+  currentPlaybackSpeed = 1
 }
 
 const WORK_ITEM_STATUSES = new Set(['queued', 'active', 'blocked', 'done'])
@@ -412,6 +446,12 @@ function dispatchEvent(event: AgentEvent): void {
       const tileId = event.target?.tile_id
       if (tileId) {
         universe.updateTile(tileId, { state: 'ruins' })
+        // Schedule tile removal — ruins briefly visible, then gone (scaled by playback speed)
+        const ruinsTimer = setTimeout(() => {
+          universe.removeTile(tileId)
+          tileRuinsTimers.delete(tileId)
+        }, RUINS_FADE_MS / currentPlaybackSpeed)
+        tileRuinsTimers.set(tileId, ruinsTimer)
       }
       break
     }
@@ -433,7 +473,29 @@ function dispatchEvent(event: AgentEvent): void {
           agents.batchUpdate((agentMap) => {
             const agent = agentMap.get(event.agent_id)
             if (agent) {
-              agentMap.set(event.agent_id, { ...agent, position, status: 'active' })
+              let finalPosition = position
+              const spiralOffsets: Array<[number, number]> = [
+                [0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1],
+                [2, 0], [0, 2], [-2, 0], [0, -2],
+              ]
+              const occupiedPositions = new Set<string>()
+              for (const [otherId, other] of agentMap) {
+                if (otherId === event.agent_id) continue
+                occupiedPositions.add(`${other.position.local_x},${other.position.local_y}`)
+              }
+              for (const [dx, dy] of spiralOffsets) {
+                const testPos = {
+                  ...position,
+                  local_x: position.local_x + dx,
+                  local_y: position.local_y + dy,
+                }
+                const key = `${testPos.local_x},${testPos.local_y}`
+                if (!occupiedPositions.has(key)) {
+                  finalPosition = testPos
+                  break
+                }
+              }
+              agentMap.set(event.agent_id, { ...agent, position: finalPosition, status: 'active' })
             }
           })
         }
@@ -464,9 +526,84 @@ function dispatchEvent(event: AgentEvent): void {
           setTimeout(() => {
             toolTimers.delete(event.agent_id)
             agents.setActiveTool(event.agent_id, undefined)
-          }, 3000),
+          }, 3000 / currentPlaybackSpeed),
         )
       }
+      break
+    }
+
+    // ---- Subagent lifecycle ----
+    case 'subagent_spawn': {
+      // Dynamically add a new agent to the agent store when a subagent spawns.
+      // This makes the agent visible on the map. The AgentManager will pick it up
+      // via store subscription and create its sprite.
+      const newAgentId = event.agent_id
+      agents.batchUpdate((agentMap) => {
+        if (agentMap.has(newAgentId)) return // Already exists
+        // Find a building to place the agent near
+        const buildingId = event.target?.building_id
+        const building = buildingId ? universe.buildings.get(buildingId) : undefined
+        const firstBuilding = !building
+          ? (universe.buildings.values().next().value as
+              | { position: import('@multiverse/shared').WorldCoord }
+              | undefined)
+          : undefined
+        const position =
+          building?.position ?? firstBuilding?.position ?? { chunk_x: 0, chunk_y: 0, local_x: 20, local_y: 20 }
+
+        let finalPosition = position
+        const spiralOffsets: Array<[number, number]> = [
+          [0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1],
+          [2, 0], [0, 2], [-2, 0], [0, -2],
+        ]
+        const occupiedPositions = new Set<string>()
+        for (const existing of agentMap.values()) {
+          occupiedPositions.add(`${existing.position.local_x},${existing.position.local_y}`)
+        }
+        for (const [dx, dy] of spiralOffsets) {
+          const testPos = {
+            ...position,
+            local_x: position.local_x + dx,
+            local_y: position.local_y + dy,
+          }
+          const key = `${testPos.local_x},${testPos.local_y}`
+          if (!occupiedPositions.has(key)) {
+            finalPosition = testPos
+            break
+          }
+        }
+
+        agentMap.set(newAgentId, {
+          id: newAgentId,
+          universe_id: 'universe_imported',
+          name: `Agent ${newAgentId.slice(-6)}`,
+          type: 'claude',
+          sprite_config: {
+            sprite_sheet: 'agents/claude',
+            idle_animation: 'idle',
+            walk_animation: 'walk',
+            combat_animation: 'combat',
+          },
+          status: 'active',
+          current_planet_id: event.planet_id,
+          position: finalPosition,
+          vision_radius: 5,
+          tools: [
+            { tool_id: 'tool_code_edit', enabled: true, usage_count: 0 },
+            { tool_id: 'tool_terminal', enabled: true, usage_count: 0 },
+            { tool_id: 'tool_file_read', enabled: true, usage_count: 0 },
+          ],
+        })
+      })
+      break
+    }
+
+    case 'subagent_complete': {
+      // Remove the completed agent from the store.
+      // AgentManager will detect this via store subscription and destroy the sprite.
+      agents.batchUpdate((agentMap) => {
+        agentMap.delete(event.agent_id)
+      })
       break
     }
 
@@ -565,23 +702,78 @@ function dispatchEvent(event: AgentEvent): void {
       const meta = event.metadata as {
         severity?: string
         message?: string
+        tool_name?: string
         trace_id?: string
       }
       if (monsterId) {
         const building = buildingId
           ? universe.buildings.get(buildingId)
           : undefined
-        // Resolve position: building > district > first building in store
-        let monsterPos = building?.position
+
+        // Deterministic jitter from monster ID to prevent stacking
+        let idHash = 0
+        for (let i = 0; i < monsterId.length; i++) {
+          idHash = ((idHash << 5) - idHash + monsterId.charCodeAt(i)) | 0
+        }
+        const jitter = Math.abs(idHash) % 3 // 0-2 tiles
+
+        // Resolve position near (but not on top of) the source entity
+        let monsterPos: WorldCoord | undefined
+
+        // 1. Prefer agent position — offset +2 tiles in local_x
+        const agent = agents.agents.get(event.agent_id)
+        if (agent?.position) {
+          const offsetX = 2 + jitter
+          const rawX = agent.position.local_x + offsetX
+          monsterPos = {
+            chunk_x: agent.position.chunk_x + (rawX > 63 ? 1 : 0),
+            chunk_y: agent.position.chunk_y,
+            local_x: rawX > 63 ? rawX - 64 : rawX,
+            local_y: agent.position.local_y,
+          }
+        }
+
+        // 2. Fall back to building position — offset by footprint width + 1
+        if (!monsterPos && building?.position) {
+          const offsetX = (building.footprint?.width ?? 1) + 1 + jitter
+          const rawX = building.position.local_x + offsetX
+          monsterPos = {
+            chunk_x: building.position.chunk_x + (rawX > 63 ? 1 : 0),
+            chunk_y: building.position.chunk_y,
+            local_x: rawX > 63 ? rawX - 64 : rawX,
+            local_y: building.position.local_y,
+          }
+        }
+
+        // 3. Fall back to district position with offset
         if (!monsterPos) {
           const districtId = event.target?.district_id
           const district = districtId ? universe.districts.get(districtId) : undefined
-          monsterPos = district?.position
+          if (district?.position) {
+            const offsetX = 2 + jitter
+            const rawX = district.position.local_x + offsetX
+            monsterPos = {
+              chunk_x: district.position.chunk_x + (rawX > 63 ? 1 : 0),
+              chunk_y: district.position.chunk_y,
+              local_x: rawX > 63 ? rawX - 64 : rawX,
+              local_y: district.position.local_y,
+            }
+          }
         }
+
+        // 4. Last resort: use first building available with offset
         if (!monsterPos) {
-          // Last resort: use first building available
-          const firstBuilding = universe.buildings.values().next().value as { position: typeof monsterPos } | undefined
-          monsterPos = firstBuilding?.position
+          const firstBuilding = universe.buildings.values().next().value as { position: WorldCoord; footprint?: { width: number } } | undefined
+          if (firstBuilding?.position) {
+            const offsetX = (firstBuilding.footprint?.width ?? 1) + 1 + jitter
+            const rawX = firstBuilding.position.local_x + offsetX
+            monsterPos = {
+              chunk_x: firstBuilding.position.chunk_x + (rawX > 63 ? 1 : 0),
+              chunk_y: firstBuilding.position.chunk_y,
+              local_x: rawX > 63 ? rawX - 64 : rawX,
+              local_y: firstBuilding.position.local_y,
+            }
+          }
         }
         monsters.spawnMonster({
           id: monsterId,
@@ -596,7 +788,29 @@ function dispatchEvent(event: AgentEvent): void {
           buildingId,
           workitemId,
           message: meta.message ?? 'Unknown error',
+          toolName: meta.tool_name,
         })
+        // Auto-drain: health drops from 100→0 over ~8s (scaled by playback speed), then fade out + remove
+        const drainMs = 8000 / currentPlaybackSpeed
+        const drainSteps = 20
+        let adStep = 0
+        const autoDrainTimer = setInterval(() => {
+          adStep++
+          const healthPct = Math.max(0, 100 - (adStep / drainSteps) * 100)
+          monsters.updateMonsterHealth(monsterId, healthPct)
+          if (adStep >= drainSteps) {
+            clearInterval(autoDrainTimer)
+            autoDrainTimers.delete(monsterId)
+            monsters.defeatMonster(monsterId)
+            const removeTimer = setTimeout(() => {
+              monsters.removeMonster(monsterId)
+              monsterRemoveTimers.delete(monsterId)
+            }, MONSTER_REMOVE_DELAY_MS / currentPlaybackSpeed)
+            monsterRemoveTimers.set(monsterId, removeTimer)
+          }
+        }, drainMs / drainSteps)
+        autoDrainTimers.set(monsterId, autoDrainTimer)
+
         // Also create incident workitem
         if (workitemId) {
           workItems.addWorkItem({
@@ -615,6 +829,14 @@ function dispatchEvent(event: AgentEvent): void {
     case 'combat_start': {
       const monsterId = event.target?.monster_id
       if (monsterId) {
+        // Cancel any auto-drain so incident-grade monsters with explicit combat aren't auto-dismissed
+        const pendingAutoDrain = autoDrainTimers.get(monsterId)
+        if (pendingAutoDrain) {
+          clearInterval(pendingAutoDrain)
+          autoDrainTimers.delete(monsterId)
+          // Reset health to 100 since combat is taking over
+          monsters.updateMonsterHealth(monsterId, 100)
+        }
         monsters.updateMonsterStatus(monsterId, 'in_combat')
         monsters.setFightingAgent(monsterId, event.agent_id)
         const monster = monsters.monsters.get(monsterId)
@@ -637,9 +859,9 @@ function dispatchEvent(event: AgentEvent): void {
       const meta = event.metadata as { outcome?: string }
       if (monsterId) {
         if (meta.outcome === 'defeated') {
-          // Animate health draining over 1.5s before marking defeated
+          // Animate health draining before marking defeated (scaled by playback speed)
           const drainSteps = 6
-          const drainInterval = 250
+          const drainInterval = 250 / currentPlaybackSpeed
           let step = 0
           const drainTimer = setInterval(() => {
             step++
@@ -647,7 +869,14 @@ function dispatchEvent(event: AgentEvent): void {
             monsters.updateMonsterHealth(monsterId, healthPct)
             if (step >= drainSteps) {
               clearInterval(drainTimer)
+              healthDrainTimers.delete(monsterId)
               monsters.defeatMonster(monsterId)
+              // Schedule authoritative removal from store after renderer fade (scaled by playback speed)
+              const removeTimer = setTimeout(() => {
+                monsters.removeMonster(monsterId)
+                monsterRemoveTimers.delete(monsterId)
+              }, MONSTER_REMOVE_DELAY_MS / currentPlaybackSpeed)
+              monsterRemoveTimers.set(monsterId, removeTimer)
             }
           }, drainInterval)
           healthDrainTimers.set(monsterId, drainTimer)
