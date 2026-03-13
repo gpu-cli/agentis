@@ -48,7 +48,7 @@ export function useLocalSessions(): UseLocalSessionsResult {
     setError(null)
 
     try {
-      const response = await fetch('/api/local/sessions?limit=100', {
+      const response = await fetch('/api/local/sessions?limit=500', {
         signal: controller.signal,
       })
 
