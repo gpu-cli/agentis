@@ -12,61 +12,47 @@ Privacy-first by design: transcript parsing and visualization run entirely on yo
 
 ## Quick Start
 
-### For users
-
 ```bash
-git clone git@github.com:gpu-cli/agentis.git
-cd agentis
-pnpm install
-AGENTIS_LOCAL_MODE=true NEXT_PUBLIC_AGENTIS_LOCAL=true NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true pnpm dev
+npx @agentis/local
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Your Claude Code sessions from `~/.claude/projects/` are automatically detected — pick one and visualize, or upload transcript files manually.
+That's it. Auto-discovers your Claude Code sessions from `~/.claude/projects/` and opens a local visualization at `http://127.0.0.1:3456`.
 
-### For contributors
+Options: `--port <number>`, `--no-open` (skip browser). See `npx @agentis/local --help`.
+
+### From source
 
 ```bash
 git clone git@github.com:gpu-cli/agentis.git
 cd agentis
 pnpm install
-pnpm dev
+pnpm build:local      # Build standalone bundle
+pnpm local:run        # Start local server
+```
+
+Or for development with hot reload:
+
+```bash
+pnpm dev              # Start Next.js dev server on :3000
 ```
 
 Supported formats today:
 - Claude Code JSONL
 - More transcript formats coming soon
 
-## Useful Commands
+## Commands
 
 ```bash
-pnpm dev              # Start dev server on :3000
+pnpm dev              # Dev server on :3000
 pnpm build            # Production build
 pnpm typecheck        # TypeScript check
 pnpm test             # Run tests
 pnpm lint             # Lint
+pnpm build:local      # Build @agentis/local bundle
+pnpm local:run        # Run local server
+pnpm local:pack-run   # Package + run via npx (tests real artifact)
+pnpm local:clean      # Remove bundle/tarball artifacts
 ```
-
-## Auto-Discovery (Local Mode)
-
-When running with `AGENTIS_LOCAL_MODE=true`, the app scans `~/.claude/projects/` and shows your Claude Code sessions directly in the import screen. Select any session to load it instantly — no manual file hunting needed.
-
-The discovery runs entirely on your machine via local API routes bound to `127.0.0.1`. Your transcripts never leave your device.
-
-To enable auto-discovery in dev:
-
-```bash
-AGENTIS_LOCAL_MODE=true NEXT_PUBLIC_AGENTIS_LOCAL=true NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true pnpm dev
-```
-
-Or create `apps/web/.env.local`:
-
-```env
-AGENTIS_LOCAL_MODE=true
-NEXT_PUBLIC_AGENTIS_LOCAL=true
-NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true
-```
-
-Manual upload (Files, Folder, Zip) is always available as a fallback.
 
 ## Project Structure
 

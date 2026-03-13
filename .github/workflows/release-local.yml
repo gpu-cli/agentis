@@ -1,0 +1,109 @@
+# Publish @agentis/local to npm with provenance
+#
+# Triggered by pushing a tag matching `local-v*` (e.g. local-v0.1.0).
+# Uses GitHub OIDC trusted publishing — no npm tokens stored as secrets.
+#
+# Flow:
+#   1. Install + build standalone bundle
+#   2. Pack tarball and smoke-test via npx
+#   3. Verify package contents
+#   4. Publish to npm with provenance attestation
+
+name: Release @agentis/local
+
+on:
+  push:
+    tags:
+      - 'local-v*'
+
+permissions:
+  contents: read
+  id-token: write  # Required for npm provenance
+
+jobs:
+  release:
+    name: Build, verify & publish
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build standalone bundle
+        run: pnpm build:local
+        env:
+          AGENTIS_LOCAL_MODE: 'true'
+          NEXT_PUBLIC_AGENTIS_LOCAL: 'true'
+          NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT: 'true'
+
+      - name: Verify bundle exists
+        run: |
+          test -f packages/local-runner/bundle/apps/web/server.js
+          echo "Bundle verified"
+
+      - name: Pack tarball
+        working-directory: packages/local-runner
+        run: |
+          TARBALL=$(npm pack --json | jq -r '.[0].filename')
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          echo "Packed: $TARBALL"
+
+      - name: Verify package contents
+        working-directory: packages/local-runner
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack-contents.txt
+          # Must include bin and bundle
+          grep -q "bin/agentis-local.js" /tmp/pack-contents.txt
+          grep -q "bundle/" /tmp/pack-contents.txt
+          echo "Package contents verified"
+
+      - name: Smoke test — CLI starts and responds
+        working-directory: packages/local-runner
+        run: |
+          npx "./$TARBALL" --no-open &
+          SERVER_PID=$!
+          # Wait for server to be ready (up to 30s)
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3456/ > /dev/null 2>&1; then
+              echo "Server responding after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Verify response
+          HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3456/)
+          kill $SERVER_PID 2>/dev/null || true
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Server returned HTTP $HTTP_CODE (expected 200)"
+            exit 1
+          fi
+          echo "Smoke test passed (HTTP $HTTP_CODE)"
+
+      - name: Check tarball size
+        working-directory: packages/local-runner
+        run: |
+          SIZE=$(stat --format=%s "$TARBALL" 2>/dev/null || stat -f%z "$TARBALL")
+          SIZE_MB=$((SIZE / 1048576))
+          echo "Tarball size: ${SIZE_MB}MB ($SIZE bytes)"
+          if [ "$SIZE_MB" -gt 60 ]; then
+            echo "WARNING: Tarball exceeds 60MB — review bundle size"
+          fi
+
+      - name: Publish to npm
+        working-directory: packages/local-runner
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -42,7 +42,7 @@ fi
 # Step 1: Build the web app (turbo resolves package deps automatically)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}[1/4] Building web app (standalone)...${NC}"
+echo -e "${CYAN}[1/6] Building web app (standalone)...${NC}"
 cd "$ROOT_DIR"
 
 # Build only @multiverse/web — NOT @agentis/local (avoids infinite recursion).
@@ -64,13 +64,13 @@ if [ ! -f "$STANDALONE_SERVER" ]; then
   exit 1
 fi
 
-echo -e "${CYAN}[2/4] Standalone server found${NC}"
+echo -e "${CYAN}[2/6] Standalone server found${NC}"
 
 # ---------------------------------------------------------------------------
 # Step 3: Copy static assets into standalone (Next.js doesn't include them)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}[3/4] Copying static assets...${NC}"
+echo -e "${CYAN}[3/6] Copying static assets...${NC}"
 
 STANDALONE_WEB="$STANDALONE_DIR/apps/web"
 
@@ -89,7 +89,7 @@ cp -r "$WEB_DIR/.next/static" "$STANDALONE_WEB/.next/static"
 # We create real copies (not symlinks) for portability.
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}[4/5] Hoisting pnpm dependencies...${NC}"
+echo -e "${CYAN}[4/6] Hoisting pnpm dependencies...${NC}"
 
 PNPM_STORE="$STANDALONE_DIR/node_modules/.pnpm"
 ROOT_NM="$STANDALONE_DIR/node_modules"
@@ -126,20 +126,39 @@ fi
 # Step 5: Copy entire standalone tree into bundle/ (preserving layout)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}[5/5] Assembling bundle...${NC}"
+echo -e "${CYAN}[5/6] Assembling bundle...${NC}"
 
 rm -rf "$BUNDLE_DIR"
 cp -r "$STANDALONE_DIR" "$BUNDLE_DIR"
 
 # ---------------------------------------------------------------------------
-# Summary
+# Step 6: Copy LICENSE into package directory for npm
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}[6/6] Copying LICENSE...${NC}"
+
+RUNNER_DIR="$ROOT_DIR/packages/local-runner"
+cp "$ROOT_DIR/LICENSE" "$RUNNER_DIR/LICENSE"
+
+# ---------------------------------------------------------------------------
+# Summary + size guard
 # ---------------------------------------------------------------------------
 
 BUNDLE_SIZE=$(du -sh "$BUNDLE_DIR" | cut -f1)
+BUNDLE_BYTES=$(du -s "$BUNDLE_DIR" | cut -f1)
+MAX_BUNDLE_KB=200000  # 200MB uncompressed — warn if exceeded
+
 echo ""
 echo -e "${GREEN}Bundle complete!${NC}"
 echo -e "  Location: ${CYAN}$BUNDLE_DIR${NC}"
 echo -e "  Size:     ${CYAN}$BUNDLE_SIZE${NC}"
+
+if [ "$BUNDLE_BYTES" -gt "$MAX_BUNDLE_KB" ]; then
+  echo ""
+  echo -e "${YELLOW}WARNING: Bundle exceeds ${MAX_BUNDLE_KB}KB size budget${NC}"
+  echo -e "${YELLOW}Consider auditing dependencies or static assets${NC}"
+fi
+
 echo ""
 echo "Test locally:"
 echo "  node packages/local-runner/bin/agentis-local.js --no-open"

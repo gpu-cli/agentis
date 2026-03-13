@@ -1,0 +1,96 @@
+# CI — typecheck, lint, test, and verify @agentis/local packaging
+#
+# Runs on every push and PR to main.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Typecheck, lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+  verify-package:
+    name: Verify @agentis/local packaging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build standalone bundle
+        run: pnpm build:local
+        env:
+          AGENTIS_LOCAL_MODE: 'true'
+          NEXT_PUBLIC_AGENTIS_LOCAL: 'true'
+          NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT: 'true'
+
+      - name: Pack and verify contents
+        working-directory: packages/local-runner
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack-contents.txt
+          grep -q "bin/agentis-local.js" /tmp/pack-contents.txt
+          grep -q "bundle/" /tmp/pack-contents.txt
+          grep -q "README.md" /tmp/pack-contents.txt
+          echo "Package contents verified"
+
+      - name: Smoke test — CLI starts
+        working-directory: packages/local-runner
+        run: |
+          TARBALL=$(npm pack --silent)
+          npx "./$TARBALL" --no-open &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3456/ > /dev/null 2>&1; then
+              echo "Server responding after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3456/)
+          kill $SERVER_PID 2>/dev/null || true
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Server returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Smoke test passed"
