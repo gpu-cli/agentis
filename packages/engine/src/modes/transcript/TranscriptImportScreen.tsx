@@ -4,7 +4,7 @@
 // via top-level Radix Tabs. Modal body scrollable via ShadCN ScrollArea.
 // ============================================================================
 
-import { useCallback, useMemo, useRef, useState, type ChangeEventHandler, type DragEvent } from 'react'
+import { useMemo, useRef, useState, useCallback, type ChangeEventHandler, type DragEvent } from 'react'
 import { OnboardingBackdrop } from '../../components/OnboardingBackdrop'
 import { useLocalSessions } from '../../hooks/useLocalSessions'
 import { fetchSessionFiles, reconstructFiles } from './localSessionImport'
@@ -117,20 +117,17 @@ function AutoDetectedPanel({
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center py-12">
-        <span className="text-xs text-gray-500 animate-pulse">Scanning for Claude Code transcripts...</span>
+      <div className="flex items-center justify-center py-10">
+        <span className="text-xs text-gray-500 animate-pulse">Scanning transcripts...</span>
       </div>
     )
   }
 
   if (!isLocalAvailable) {
     return (
-      <div className="flex-1 flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="text-sm text-gray-400 mb-2">Local discovery unavailable</div>
-          <div className="text-xs text-gray-500">
-            Run with <code className="text-gray-400 bg-gray-800 px-1 py-0.5 rounded text-[10px]">AGENTIS_LOCAL_MODE=true</code> to enable auto-detection.
-          </div>
+      <div className="flex items-center justify-center py-10">
+        <div className="text-xs text-gray-500">
+          Set <code className="text-gray-400 bg-gray-800 px-1 py-0.5 rounded text-[10px]">AGENTIS_LOCAL_MODE=true</code> to enable.
         </div>
       </div>
     )
@@ -138,15 +135,9 @@ function AutoDetectedPanel({
 
   if (sessions.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-10">
         <div className="text-center">
-          <div className="text-sm text-gray-400 mb-2">No sessions found</div>
-          <div className="text-xs text-gray-500">
-            Run a Claude Code session first, then refresh this page.
-          </div>
-          <div className="text-[10px] text-gray-600 mt-1">
-            Looking in <code className="text-gray-500 bg-gray-800 px-1 py-0.5 rounded">~/.claude/projects/</code>
-          </div>
+          <div className="text-xs text-gray-400">No sessions found in <code className="text-gray-500 bg-gray-800 px-1 py-0.5 rounded text-[10px]">~/.claude/projects/</code></div>
         </div>
       </div>
     )
@@ -167,13 +158,12 @@ function AutoDetectedPanel({
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm text-green-300 font-medium group-hover:text-green-200">
-                {loadingSessionId === latestSession.sessionId ? 'Loading...' : 'Load latest session'}
+                {loadingSessionId === latestSession.sessionId ? 'Loading...' : 'Load latest'}
               </div>
               <div className="text-[10px] text-gray-400 mt-0.5">
-                <span className="text-green-400/70">{formatProjectName(latestSession.project)}</span>
+                {formatProjectName(latestSession.project)}
                 {' \u00b7 '}{formatRelativeTime(latestSession.updatedAt)}
                 {' \u00b7 '}{formatBytes(latestSession.totalBytes)}
-                {latestSession.hasSubagents ? ' \u00b7 has subagents' : ''}
               </div>
             </div>
             <span className="text-green-400 text-sm group-hover:text-green-300">
@@ -186,7 +176,7 @@ function AutoDetectedPanel({
       {/* All sessions grouped by project */}
       <div>
         <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
-          All sessions ({sessions.length})
+          {sessions.length} session{sessions.length !== 1 ? 's' : ''}
         </div>
         <ScrollArea viewportClassName="max-h-[45vh]">
           <div className="space-y-1 pr-2">
@@ -220,9 +210,7 @@ function AutoDetectedPanel({
                             <span className="text-gray-300 truncate block">{formatProjectName(session.project)}</span>
                             <span className="text-[10px] text-gray-500">
                               {formatRelativeTime(session.updatedAt)}
-                              {' \u00b7 '}{session.fileCount} file{session.fileCount !== 1 ? 's' : ''}
                               {' \u00b7 '}{formatBytes(session.totalBytes)}
-                              {session.hasSubagents ? ' \u00b7 subagents' : ''}
                             </span>
                           </div>
                           <span className="text-gray-500 hover:text-gray-300 shrink-0">
@@ -247,37 +235,20 @@ function AutoDetectedPanel({
 // ---------------------------------------------------------------------------
 
 function PrivacyDisclosure() {
-  const [expanded, setExpanded] = useState(false)
-  const toggle = useCallback(() => setExpanded((v) => !v), [])
-
   return (
-    <div className="mt-3">
-      <div className="flex items-center gap-2 text-xs text-gray-400">
-        <span className="inline-block w-2 h-2 rounded-full bg-green-400 shrink-0" />
-        <span>100% local — nothing leaves your browser.</span>
-        <button
-          onClick={toggle}
-          className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors ml-1"
+    <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+      <span>
+        100% local — nothing leaves your machine.{' '}
+        <a
+          href="https://github.com/gpu-cli/agentis"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-gray-400 hover:text-gray-300 underline underline-offset-2"
         >
-          {expanded ? 'Hide details' : 'How this works'}
-        </button>
-      </div>
-      {expanded && (
-        <ul className="mt-2 ml-4 space-y-1 text-xs text-gray-500 list-disc list-outside">
-          <li>Files are parsed entirely in your browser — no data is uploaded</li>
-          <li>
-            Open source — inspect the code on{' '}
-            <a
-              href="https://github.com/gpu-cli/agentis"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-            >
-              GitHub
-            </a>
-          </li>
-        </ul>
-      )}
+          Source
+        </a>
+      </span>
     </div>
   )
 }
@@ -403,10 +374,7 @@ export function TranscriptImportScreen({
       <div className="relative z-10 w-full max-w-3xl bg-gray-900/80 border border-gray-700 rounded-xl shadow-2xl backdrop-blur-sm max-h-[90vh] flex flex-col">
         {/* Fixed header */}
         <div className="p-6 md:p-8 pb-0 shrink-0">
-          <h1 className="font-pixel text-lg text-green-400 mb-2">Import Transcripts</h1>
-          <p className="text-sm text-gray-300">
-            Select Claude transcript files to visualize.
-          </p>
+          <h1 className="font-pixel text-lg text-green-400 mb-1">Import Transcripts</h1>
           <PrivacyDisclosure />
         </div>
 
@@ -434,8 +402,7 @@ export function TranscriptImportScreen({
                   value="auto"
                   className="flex-1 text-xs data-[state=active]:bg-green-700 data-[state=active]:text-white data-[state=inactive]:text-gray-400 rounded-md px-3 py-1.5 transition-colors"
                 >
-                  Auto Import
-                  {!sessionsLoading && sessions.length > 0 && (
+                  Sessions{!sessionsLoading && sessions.length > 0 && (
                     <span className="ml-1.5 text-[10px] opacity-70">({sessions.length})</span>
                   )}
                 </TabsTrigger>
@@ -443,7 +410,7 @@ export function TranscriptImportScreen({
                   value="manual"
                   className="flex-1 text-xs data-[state=active]:bg-green-700 data-[state=active]:text-white data-[state=inactive]:text-gray-400 rounded-md px-3 py-1.5 transition-colors"
                 >
-                  Manual Upload
+                  Upload
                 </TabsTrigger>
               </TabsList>
 
