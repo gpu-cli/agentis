@@ -153,6 +153,12 @@ export class FogOfWar {
   setAgentPositionOverrides(overrides: Map<string, { x: number; y: number }>): void {
     // Check if any position actually changed — avoid unnecessary re-renders
     if (this.agentPixelOverrides) {
+      // Detect size changes (agent added/removed) — always counts as changed
+      if (overrides.size !== this.agentPixelOverrides.size) {
+        this.agentPixelOverrides = overrides
+        this.dirty = true
+        return
+      }
       let changed = false
       for (const [id, pos] of overrides) {
         const prev = this.agentPixelOverrides.get(id)
@@ -336,6 +342,21 @@ export class FogOfWar {
     }
 
     return 'void'
+  }
+
+  /** Clear all cached fog state so reveal circles don't bleed across scenario loads */
+  reset(): void {
+    this.agentPixelOverrides = null
+    this.visited.clear()
+    this.revealMask.clear()
+    // Remove all fog polygon children (keep the mask)
+    const children = [...this.container.children]
+    for (const child of children) {
+      if (child !== this.revealMask) {
+        this.container.removeChild(child)
+      }
+    }
+    this.dirty = true
   }
 
   markDirty(): void {

@@ -27,6 +27,7 @@ interface MonsterState {
     message: string
     toolName?: string
     stackTrace?: string
+    spawnedAt?: number
   }) => void
   updateMonsterHealth: (monsterId: string, health: number) => void
   updateMonsterStatus: (monsterId: string, status: MonsterStatus) => void
@@ -63,7 +64,7 @@ export const useMonsterStore = create<MonsterState>((set) => ({
         stack_trace: params.stackTrace,
       },
       conversation_thread: [],
-      spawned_at: Date.now(),
+      spawned_at: params.spawnedAt ?? Date.now(),
     }
     set((state) => {
       const monsters = new Map(state.monsters)

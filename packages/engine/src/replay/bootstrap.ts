@@ -7,7 +7,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { useAgentStore } from '../stores/agentStore'
 import { useMonsterStore } from '../stores/monsterStore'
 import { useWorkItemStore } from '../stores/workItemStore'
-import { useEventStore } from '../stores/eventStore'
+import { clearDispatchTimers, useEventStore } from '../stores/eventStore'
 import { useUIStore } from '../stores/uiStore'
 
 // ---------------------------------------------------------------------------
@@ -45,6 +45,7 @@ const EMPTY_SNAPSHOT: PlanetSnapshot = {
  * and resets the event store.
  */
 export function bootstrapReplay(scenario: ScenarioData): void {
+  clearDispatchTimers()
   useUniverseStore.getState().loadSnapshot(scenario.snapshot)
   useAgentStore.getState().loadSnapshot(scenario.snapshot)
   useMonsterStore.getState().loadSnapshot(scenario.snapshot)
@@ -56,6 +57,7 @@ export function bootstrapReplay(scenario: ScenarioData): void {
 
 /** Reset all stores to empty state */
 export function resetAllStores(): void {
+  clearDispatchTimers()
   useUniverseStore.getState().loadSnapshot(EMPTY_SNAPSHOT)
   useAgentStore.getState().loadSnapshot(EMPTY_SNAPSHOT)
   useMonsterStore.getState().loadSnapshot(EMPTY_SNAPSHOT)

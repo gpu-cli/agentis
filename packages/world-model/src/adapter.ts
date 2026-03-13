@@ -507,8 +507,6 @@ function toAgent(actor: ActorRef, snapshot: WorldModelSnapshot, index: number): 
   const x = workLoc ? workLoc.x + jitterX : 10
   const y = workLoc ? workLoc.y + jitterY : 10
 
-  // TODO: Make agent type dynamic based on transcript source detection
-  // For now hardcode to 'claude' so the sprite renders correctly
   const agentType = 'claude'
 
   // Collect unique tools used across all work units for this agent

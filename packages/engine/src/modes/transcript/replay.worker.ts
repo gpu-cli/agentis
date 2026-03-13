@@ -79,6 +79,14 @@ let lastSendAt = 0
 let sabRing: SABRingBuffer | null = null
 let sabActive = false
 
+// Gap compression thresholds
+const GAP_SHORT_MS = 2000
+const GAP_LONG_MS = 10000
+const GAP_VERY_LONG_MS = 30000
+const COMPRESSED_SHORT_MS = 500
+const COMPRESSED_LONG_MS = 1000
+const COMPRESSED_VERY_LONG_MS = 1500
+
 function post(msg: ReplayWorkerOutMessage) {
   ctx.postMessage(msg)
 }
@@ -261,6 +269,22 @@ function tick(realDeltaMs: number) {
   let acc = Math.min(realDeltaMs * visibilityFactor, FIXED_DT_MS * MAX_STEPS_PER_TICK)
   let eventBatch: AgentEvent[] | null = null
 
+  // Gap compression: jump ahead when next event is far in the future.
+  if (currentIndex < totalEvents) {
+    const nextEventTime = loadedEvents[currentIndex]!.timestamp
+    const currentSimMs = baseTime + simTime
+    const gap = nextEventTime - currentSimMs
+    if (gap > GAP_SHORT_MS) {
+      let targetBefore = COMPRESSED_SHORT_MS
+      if (gap > GAP_VERY_LONG_MS) {
+        targetBefore = COMPRESSED_VERY_LONG_MS
+      } else if (gap > GAP_LONG_MS) {
+        targetBefore = COMPRESSED_LONG_MS
+      }
+      simTime = (nextEventTime - baseTime) - targetBefore
+    }
+  }
+
   while (acc > 0) {
     const step = Math.min(acc, FIXED_DT_MS)
     acc -= step
@@ -336,17 +360,24 @@ let loopTimer: number | null = null
 let lastNow = performance.now()
 function startLoop() {
   if (loopTimer !== null) return
-  const step = () => {
+  lastNow = performance.now()
+  scheduleStep()
+}
+
+function scheduleStep() {
+  loopTimer = (setTimeout(() => {
     const now = performance.now()
     const delta = now - lastNow
     lastNow = now
     if (running) {
       tick(delta)
+      if (running) {
+        scheduleStep()
+        return
+      }
     }
-    loopTimer = (setTimeout(step, 16) as unknown) as number
-  }
-  lastNow = performance.now()
-  step()
+    loopTimer = null
+  }, 16) as unknown) as number
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +463,7 @@ ctx.onmessage = (ev: MessageEvent) => {
         break
       case 'pause':
         running = false
+        if (loopTimer !== null) { clearTimeout(loopTimer); loopTimer = null }
         break
       case 'restart':
         // Stop playback loop and cancel pending timers

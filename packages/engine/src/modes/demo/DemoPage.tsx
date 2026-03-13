@@ -24,9 +24,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useMemo, useEffect } from 'react'
 
 function getSpeedOptions(totalEvents: number): number[] {
-  return totalEvents < 50
-    ? [1, 2, 5, 10, 25]
-    : [1, 10, 25, 50, 100]
+  return totalEvents >= 1000
+    ? [1, 10, 25, 50, 100]
+    : [1, 5, 10, 25]
 }
 
 export function DemoPage() {

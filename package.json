@@ -12,13 +12,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
-    "build:local": "./scripts/build-local.sh",
-    "local:run": "node packages/local-runner/bin/agentis-local.js",
-    "local:run:no-open": "node packages/local-runner/bin/agentis-local.js --no-open",
-    "local:pack-run": "sh -c 'cd packages/local-runner && TARBALL=$(npm pack --silent) && npx \"./$TARBALL\" --no-open'",
-    "local:pack-run:open": "sh -c 'cd packages/local-runner && TARBALL=$(npm pack --silent) && npx \"./$TARBALL\"'",
-    "local:clean": "sh -c 'rm -rf packages/local-runner/bundle packages/local-runner/*.tgz apps/web/.next/standalone'"
+    "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

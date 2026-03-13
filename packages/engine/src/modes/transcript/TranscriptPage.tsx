@@ -40,9 +40,9 @@ import { estimateBudget } from '@multiverse/world-model'
 import type { WorldRenderer } from '../../engine/WorldRenderer'
 
 function getSpeedOptions(totalEvents: number): number[] {
-  return totalEvents < 50
-    ? [1, 2, 5, 10, 25]
-    : [1, 10, 25, 50, 100]
+  return totalEvents >= 1000
+    ? [1, 10, 25, 50, 100]
+    : [1, 5, 10, 25]
 }
 
 /** Human-readable labels for pipeline stages */

@@ -513,6 +513,7 @@ export class WorldRenderer {
     this.workItemMarkers?.reset()
     this.heatOverlay?.reset()
     this.occupancyAnimator?.reset()
+    this.fog?.reset()
     this._prevFollowId = null
     this._lastTelemetry = null
   }

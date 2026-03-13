@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ScenarioData } from '@multiverse/shared'
 import { ReplayEngine, type ReplayEngineState } from './engine'
-import { useEventStore, setDispatchPlaybackSpeed } from '../stores/eventStore'
+import { useEventStore, setDispatchPlaybackSpeed, clearDispatchTimers } from '../stores/eventStore'
 import { useUniverseStore } from '../stores/universeStore'
 import { useAgentStore } from '../stores/agentStore'
 import { bootstrapReplay } from './bootstrap'
@@ -64,6 +64,22 @@ export function useReplayEngine() {
     ? (window as any).__MV_V4_REPLAY__ ?? (window as any).__NEXT_PUBLIC_V4_REPLAY__ ?? true
     : false
 
+  /** Stop playback loop and clear all queued replay work. */
+  const stopPlayback = useCallback(() => {
+    genRef.current++
+    if (isV4Replay) {
+      try { workerRef.current?.terminate() } catch {}
+      workerRef.current = null
+      sabRef.current = null
+    } else {
+      engineRef.current?.pause()
+    }
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0 }
+    coalescerRef.current.clear()
+    pendingEventsRef.current = []
+    setDispatchPlaybackSpeed(1)
+  }, [isV4Replay])
+
   /** Set the renderer ref for diff forwarding */
   const setRenderer = useCallback((renderer: DiffConsumer | null) => {
     rendererRef.current = renderer
@@ -108,7 +124,7 @@ export function useReplayEngine() {
 
   /** Load a scenario: bootstrap stores + load events into engine */
   const loadScenario = useCallback((scenario: ScenarioData) => {
-    genRef.current++
+    stopPlayback()
     bootstrapReplay(scenario)
     if (isV4Replay) {
       // Create worker once per scenario
@@ -291,7 +307,7 @@ export function useReplayEngine() {
     }
     // Store only snapshot for restart — engine/worker holds events
     scenarioRef.current = { ...scenario, events: [] }
-  }, [isV4Replay])
+  }, [isV4Replay, stopPlayback])
 
   const play = useCallback(() => {
     if (isV4Replay) {
@@ -305,6 +321,7 @@ export function useReplayEngine() {
   const pause = useCallback(() => {
     if (isV4Replay) {
       workerRef.current?.postMessage({ type: 'pause' })
+      clearDispatchTimers()
       setState((s) => ({ ...s, playbackState: 'paused' }))
     } else {
       engineRef.current?.pause()
@@ -351,11 +368,18 @@ export function useReplayEngine() {
     }
   }, [isV4Replay])
 
+  const stop = useCallback(() => {
+    stopPlayback()
+    scenarioRef.current = null
+    setState(INITIAL_STATE)
+  }, [stopPlayback])
+
   return {
     ...state,
     loadScenario,
     play,
     pause,
+    stop,
     restart,
     stepForward,
     setSpeed,

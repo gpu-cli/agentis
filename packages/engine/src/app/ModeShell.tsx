@@ -59,10 +59,10 @@ function ModeSelection() {
           >
             <div className="text-2xl mb-3">🔒</div>
             <h2 className="font-pixel text-sm text-blue-400 mb-2 group-hover:text-blue-300 transition-colors">
-              Import Your Transcripts
+              Import A Transcript
             </h2>
             <p className="text-xs text-gray-400 leading-relaxed">
-              Processed entirely on your device. Nothing is sent to us.
+              Upload transcripts from your local machine.
             </p>
           </button>
         </div>

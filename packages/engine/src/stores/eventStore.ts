@@ -358,6 +358,12 @@ const autoDrainTimers = new Map<string, ReturnType<typeof setInterval>>()
 
 /** Current playback speed — scales all dispatch timers so animations match event pacing */
 let currentPlaybackSpeed = 1
+/**
+ * Update dispatch timer scaling for newly created timers.
+ *
+ * Note: existing timers keep the delay they were created with; speed changes only
+ * affect timers scheduled after this is called.
+ */
 export function setDispatchPlaybackSpeed(speed: number): void {
   currentPlaybackSpeed = Math.max(0.1, speed)
 }
@@ -366,7 +372,7 @@ export function setDispatchPlaybackSpeed(speed: number): void {
 const RUINS_FADE_MS = 1500
 
 /** How long after defeat before monster is removed from store (matches renderer fade) */
-const MONSTER_REMOVE_DELAY_MS = 2000
+const MONSTER_REMOVE_DELAY_MS = 600
 
 /** Clear all pending dispatch timers (called on store reset) */
 export function clearDispatchTimers(): void {
@@ -789,9 +795,10 @@ function dispatchEvent(event: AgentEvent): void {
           workitemId,
           message: meta.message ?? 'Unknown error',
           toolName: meta.tool_name,
+          spawnedAt: event.timestamp,
         })
-        // Auto-drain: health drops from 100→0 over ~8s (scaled by playback speed), then fade out + remove
-        const drainMs = 8000 / currentPlaybackSpeed
+        // Auto-drain: health drops from 100→0 over ~3s (scaled by playback speed), then fade out + remove
+        const drainMs = 3000 / currentPlaybackSpeed
         const drainSteps = 20
         let adStep = 0
         const autoDrainTimer = setInterval(() => {
@@ -861,7 +868,7 @@ function dispatchEvent(event: AgentEvent): void {
         if (meta.outcome === 'defeated') {
           // Animate health draining before marking defeated (scaled by playback speed)
           const drainSteps = 6
-          const drainInterval = 250 / currentPlaybackSpeed
+          const drainInterval = 100 / currentPlaybackSpeed
           let step = 0
           const drainTimer = setInterval(() => {
             step++

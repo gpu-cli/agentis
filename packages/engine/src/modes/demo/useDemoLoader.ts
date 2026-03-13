@@ -20,6 +20,7 @@ export function useDemoLoader() {
   const doLoad = useCallback(
     async (name: DemoScenarioName) => {
       const seq = ++loadSeq.current
+      engine.stop()
       setLoadState({ phase: 'loading', stage: 'fetch', percent: 0 })
       try {
         const scenario = await loadDemoScenario(name, (stage, percent) => {
@@ -36,7 +37,7 @@ export function useDemoLoader() {
         setLoadState({ phase: 'error', message })
       }
     },
-    [engine.loadScenario],
+    [engine.loadScenario, engine.stop],
   )
 
   useEffect(() => {

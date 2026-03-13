@@ -725,26 +725,10 @@ export class TilemapManager {
     ocean.fill({ color: 0x0a1628, alpha: 1 })
     this.waterLayer.addChild(ocean)
 
-    // --- Mid-depth water layer with subtle color variation (clipped to circle) ---
-    const midWater = new Graphics()
-    const midSpacing = 80
     const rSq = radius * radius
     const iterMinX = cx - radius
     const iterMinY = cy - radius
     const iterSize = radius * 2
-    for (let x = iterMinX; x < iterMinX + iterSize; x += midSpacing) {
-      for (let y = iterMinY; y < iterMinY + iterSize; y += midSpacing) {
-        // Only place within circular boundary
-        const dx = x - cx, dy = y - cy
-        if (dx * dx + dy * dy > rSq) continue
-        const s = seededRandom(Math.floor(x * 0.01) * 1000 + Math.floor(y * 0.01))
-        if (s > 0.5) {
-          midWater.circle(x + s * 30, y + s * 20, 15 + s * 25)
-        }
-      }
-    }
-    midWater.fill({ color: 0x0d1e35, alpha: 0.5 })
-    this.waterLayer.addChild(midWater)
 
     // --- Wave ripple pattern (clipped to circle) ---
     const waves = new Graphics()
@@ -1795,14 +1779,19 @@ export class TilemapManager {
       const labelRect = { x: mx - 18, y: my - 9, w: 36, h: 18 }
       if (!rectsOverlap(labelRect, obstacleRects)) {
         const roadLabel = new Text({ text: displayLabel, style: fileLabelStyle })
-        const rlBg = new Graphics()
-        // Precisely center background and text on computed midpoint
-        rlBg.roundRect(mx - roadLabel.width / 2 - 3, my - roadLabel.height / 2, roadLabel.width + 6, roadLabel.height + 4, 3)
-        rlBg.fill({ color: 0x000000, alpha: 0.5 })
-        this.labelContainer.addChild(rlBg)
-        roadLabel.x = mx - roadLabel.width / 2
-        roadLabel.y = my - roadLabel.height / 2
+        const lx = mx - roadLabel.width / 2
+        const ly = my - roadLabel.height / 2
+        roadLabel.x = lx
+        roadLabel.y = ly
         roadLabel.alpha = 0.8
+
+        const padX = 3
+        const padY = 2
+        const rlBg = new Graphics()
+        rlBg.roundRect(lx - padX, ly - padY, roadLabel.width + padX * 2, roadLabel.height + padY * 2, 3)
+        rlBg.fill({ color: 0x000000, alpha: 0.5 })
+
+        this.labelContainer.addChild(rlBg)
         this.labelContainer.addChild(roadLabel)
       }
     }
