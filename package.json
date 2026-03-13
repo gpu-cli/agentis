@@ -12,7 +12,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "build:local": "./scripts/build-local.sh",
+    "local": "node packages/local-runner/bin/agentis-local.js",
+    "local:no-open": "node packages/local-runner/bin/agentis-local.js --no-open"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

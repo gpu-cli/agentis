@@ -9,6 +9,11 @@
 // - NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT=true (enables transcript page)
 // - Binds to 127.0.0.1 (localhost only — transcripts never exposed)
 //
+// Resolution order:
+// 1. Bundled standalone (../bundle/server.js) — used when installed via npm
+// 2. Monorepo standalone (apps/web/.next/standalone) — used after build-local.sh
+// 3. Monorepo dev mode (next dev via local binary) — used during development
+//
 // Usage:
 //   npx @agentis/local              # Start and open browser
 //   npx @agentis/local --no-open    # Start without opening browser
@@ -60,15 +65,63 @@ for (let i = 0; i < args.length; i++) {
 }
 
 // ---------------------------------------------------------------------------
-// Locate the Next.js app
+// Resolve server mode
 // ---------------------------------------------------------------------------
 
-// When running from the monorepo, apps/web is the Next.js app
-const webAppDir = resolve(__dirname, '../../../apps/web')
-const standaloneServer = resolve(webAppDir, '.next/standalone/server.js')
+// Mode 1: Bundled standalone (npm package install via npx)
+// The bundle preserves the monorepo layout: bundle/apps/web/server.js
+// CWD must be bundle/ (the standalone root) for module resolution to work.
+const bundleDir = resolve(__dirname, '../bundle')
+const bundledServer = resolve(bundleDir, 'apps/web/server.js')
 
-// Prefer standalone server if built, otherwise use next dev
-const useStandalone = existsSync(standaloneServer)
+// Mode 2: Monorepo standalone (after running scripts/build-local.sh)
+const monorepoRoot = resolve(__dirname, '../../../')
+const monorepoWebDir = resolve(monorepoRoot, 'apps/web')
+const standaloneDir = resolve(monorepoWebDir, '.next/standalone')
+const monorepoStandalone = resolve(standaloneDir, 'apps/web/server.js')
+
+// Mode 3: Monorepo dev (next dev via local binary)
+const nextBin = resolve(monorepoWebDir, 'node_modules/.bin/next')
+
+/** @type {'bundled' | 'standalone' | 'dev' | null} */
+let mode = null
+/** @type {string} */
+let serverPath = ''
+/** @type {string} */
+let cwd = ''
+
+if (existsSync(bundledServer)) {
+  mode = 'bundled'
+  serverPath = bundledServer
+  cwd = bundleDir
+} else if (existsSync(monorepoStandalone)) {
+  mode = 'standalone'
+  serverPath = monorepoStandalone
+  cwd = standaloneDir
+} else if (existsSync(nextBin)) {
+  mode = 'dev'
+  serverPath = nextBin
+  cwd = monorepoWebDir
+}
+
+if (!mode) {
+  console.error(`
+  \x1b[31mError: Could not find Agentis server.\x1b[0m
+
+  This can happen if:
+  • You're running from an npm install but the bundle wasn't included
+  • You're in the monorepo but haven't built yet
+
+  To fix, run one of:
+    \x1b[36m# From the agentis repo — build standalone bundle\x1b[0m
+    ./scripts/build-local.sh
+
+    \x1b[36m# From the agentis repo — quick dev mode\x1b[0m
+    pnpm install
+    pnpm dev
+`)
+  process.exit(1)
+}
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -88,11 +141,12 @@ const env = {
 // ---------------------------------------------------------------------------
 
 const url = `http://127.0.0.1:${port}`
+const modeLabel = mode === 'bundled' ? 'bundled' : mode === 'standalone' ? 'standalone' : 'dev'
 
 console.log()
 console.log('  \x1b[32m▶ Agentis Local\x1b[0m')
 console.log()
-console.log(`  Starting on \x1b[36m${url}\x1b[0m`)
+console.log(`  Starting on \x1b[36m${url}\x1b[0m  \x1b[90m(${modeLabel} mode)\x1b[0m`)
 console.log('  Auto-discovering transcripts from \x1b[33m~/.claude/projects/\x1b[0m')
 console.log()
 console.log('  Press \x1b[1mCtrl+C\x1b[0m to stop')
@@ -100,18 +154,19 @@ console.log()
 
 let child
 
-if (useStandalone) {
-  child = spawn('node', [standaloneServer], {
+if (mode === 'dev') {
+  // Dev mode: run next dev via the local binary (no pnpm needed)
+  child = spawn(serverPath, ['dev', '-p', String(port), '-H', '127.0.0.1'], {
     env,
     stdio: 'inherit',
-    cwd: resolve(webAppDir, '.next/standalone'),
+    cwd,
   })
 } else {
-  // Dev mode: use pnpm dev with port override
-  child = spawn('pnpm', ['next', 'dev', '-p', String(port), '-H', '127.0.0.1'], {
+  // Bundled or standalone: run node server.js directly
+  child = spawn(process.execPath, [serverPath], {
     env,
     stdio: 'inherit',
-    cwd: webAppDir,
+    cwd,
   })
 }
 
@@ -120,9 +175,9 @@ if (useStandalone) {
 // ---------------------------------------------------------------------------
 
 if (openBrowser) {
-  setTimeout(async () => {
+  const delay = mode === 'dev' ? 3000 : 1500
+  setTimeout(() => {
     try {
-      // Dynamic import to avoid requiring 'open' as a dependency
       const platform = process.platform
       if (platform === 'darwin') {
         spawn('open', [url], { stdio: 'ignore', detached: true }).unref()
@@ -134,7 +189,7 @@ if (openBrowser) {
     } catch {
       console.log(`  Open \x1b[36m${url}\x1b[0m in your browser`)
     }
-  }, 2000)
+  }, delay)
 }
 
 // ---------------------------------------------------------------------------

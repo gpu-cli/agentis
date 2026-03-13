@@ -8,10 +8,13 @@
     "agentis-local": "./bin/agentis-local.js"
   },
   "files": [
-    "bin/"
+    "bin/",
+    "bundle/"
   ],
   "scripts": {
-    "typecheck": "echo 'no-op (plain JS)'"
+    "typecheck": "echo 'no-op (plain JS)'",
+    "build": "../../scripts/build-local.sh",
+    "prepublishOnly": "../../scripts/build-local.sh"
   },
   "keywords": [
     "agentis",

@@ -34,7 +34,7 @@ function getClientIp(request: NextRequest): string | null {
   if (realIp) return realIp.trim()
 
   // Next.js provides ip on the request in some environments
-  return (request as any).ip ?? null
+  return (request as unknown as Record<string, string>).ip ?? null
 }
 
 /** Check if an IP address is a loopback address */
