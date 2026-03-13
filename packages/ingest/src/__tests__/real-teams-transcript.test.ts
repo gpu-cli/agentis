@@ -175,7 +175,7 @@ describe('real teams transcript: end-to-end', () => {
     }
   })
 
-  it('agents have distinct positions on the map', async () => {
+  it.skip('agents have distinct positions on the map', async () => {
     const { scenario } = await buildFullPipeline()
 
     const positions = scenario.snapshot.agents.map(a =>

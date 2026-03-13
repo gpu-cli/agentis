@@ -57,14 +57,15 @@ jobs:
       - name: Pack tarball
         working-directory: packages/local-runner
         run: |
-          TARBALL=$(npm pack --json | jq -r '.[0].filename')
+          # --ignore-scripts: bundle already built above, skip prepack to avoid double-build
+          TARBALL=$(npm pack --ignore-scripts --json | jq -r '.[0].filename')
           echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
           echo "Packed: $TARBALL"
 
       - name: Verify package contents
         working-directory: packages/local-runner
         run: |
-          npm pack --dry-run 2>&1 | tee /tmp/pack-contents.txt
+          npm pack --ignore-scripts --dry-run 2>&1 | tee /tmp/pack-contents.txt
           # Must include bin and bundle
           grep -q "bin/agentis-local.js" /tmp/pack-contents.txt
           grep -q "bundle/" /tmp/pack-contents.txt
@@ -104,6 +105,6 @@ jobs:
 
       - name: Publish to npm
         working-directory: packages/local-runner
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -68,7 +68,7 @@ jobs:
       - name: Pack and verify contents
         working-directory: packages/local-runner
         run: |
-          npm pack --dry-run 2>&1 | tee /tmp/pack-contents.txt
+          npm pack --ignore-scripts --dry-run 2>&1 | tee /tmp/pack-contents.txt
           grep -q "bin/agentis-local.js" /tmp/pack-contents.txt
           grep -q "bundle/" /tmp/pack-contents.txt
           grep -q "README.md" /tmp/pack-contents.txt
@@ -77,7 +77,7 @@ jobs:
       - name: Smoke test — CLI starts
         working-directory: packages/local-runner
         run: |
-          TARBALL=$(npm pack --silent)
+          TARBALL=$(npm pack --ignore-scripts --silent)
           npx "./$TARBALL" --no-open &
           SERVER_PID=$!
           for i in $(seq 1 30); do
