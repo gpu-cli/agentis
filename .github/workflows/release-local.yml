@@ -1,4 +1,4 @@
-# Publish @agentis/local to npm with provenance
+# Publish @gpu-cli/agentis to npm with provenance
 #
 # Triggered by pushing a tag matching `local-v*` (e.g. local-v0.1.0).
 # Uses GitHub OIDC trusted publishing — no npm tokens stored as secrets.
@@ -9,7 +9,7 @@
 #   3. Verify package contents
 #   4. Publish to npm with provenance attestation
 
-name: Release @agentis/local
+name: Release @gpu-cli/agentis
 
 on:
   push:

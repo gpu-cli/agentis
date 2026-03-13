@@ -1,11 +1,11 @@
-# @agentis/local
+# @gpu-cli/agentis
 
 Visualize your Claude Code sessions as an interactive pixel-art world — entirely on your machine.
 
 ## Quick Start
 
 ```bash
-npx @agentis/local
+npx @gpu-cli/agentis
 ```
 
 That's it. Your browser opens to a local server that auto-discovers Claude Code transcripts from `~/.claude/projects/` and lets you visualize them instantly.
@@ -13,7 +13,7 @@ That's it. Your browser opens to a local server that auto-discovers Claude Code 
 ## Options
 
 ```
-npx @agentis/local [options]
+npx @gpu-cli/agentis [options]
 
   --port <number>   Port to run on (default: 3456)
   --no-open         Don't open browser automatically
@@ -44,7 +44,7 @@ npx @agentis/local [options]
 **Port already in use**
 
 ```bash
-npx @agentis/local --port 4000
+npx @gpu-cli/agentis --port 4000
 ```
 
 **No sessions found**

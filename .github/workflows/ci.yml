@@ -1,4 +1,4 @@
-# CI — typecheck, lint, test, and verify @agentis/local packaging
+# CI — typecheck, lint, test, and verify @gpu-cli/agentis packaging
 #
 # Runs on every push and PR to main.
 
@@ -40,7 +40,7 @@ jobs:
         run: pnpm test
 
   verify-package:
-    name: Verify @agentis/local packaging
+    name: Verify @gpu-cli/agentis packaging
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

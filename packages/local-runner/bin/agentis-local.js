@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // ============================================================================
-// @agentis/local — CLI launcher
+// @gpu-cli/agentis — CLI launcher
 //
 // Starts the Agentis Next.js app in local mode with:
 // - AGENTIS_LOCAL_MODE=true (enables /api/local/* discovery routes)
@@ -15,9 +15,9 @@
 // 3. Monorepo dev mode (next dev via local binary) — used during development
 //
 // Usage:
-//   npx @agentis/local              # Start and open browser
-//   npx @agentis/local --no-open    # Start without opening browser
-//   npx @agentis/local --port 8080  # Custom port
+//   npx @gpu-cli/agentis              # Start and open browser
+//   npx @gpu-cli/agentis --no-open    # Start without opening browser
+//   npx @gpu-cli/agentis --port 8080  # Custom port
 // ============================================================================
 
 import { spawn } from 'node:child_process'
@@ -47,10 +47,10 @@ for (let i = 0; i < args.length; i++) {
     openBrowser = false
   } else if (args[i] === '--help' || args[i] === '-h') {
     console.log(`
-  @agentis/local — Visualize Claude Code sessions locally
+  @gpu-cli/agentis — Visualize Claude Code sessions locally
 
   Usage:
-    npx @agentis/local [options]
+    npx @gpu-cli/agentis [options]
 
   Options:
     --port <number>   Port to run on (default: 3456)

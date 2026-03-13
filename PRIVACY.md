@@ -1,11 +1,11 @@
-# Privacy Notice for `@agentis/local`
+# Privacy Notice for `@gpu-cli/agentis`
 
-`@agentis/local` is designed for local-first use.
+`@gpu-cli/agentis` is designed for local-first use.
 
 ## What happens to your data
 
 - All processing happens locally in your browser.
-- No data is sent to any server by `@agentis/local`.
+- No data is sent to any server by `@gpu-cli/agentis`.
 - Transcripts never leave your machine.
 
 ## Telemetry and tracking

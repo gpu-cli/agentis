@@ -1,5 +1,5 @@
 {
-  "name": "@agentis/local",
+  "name": "@gpu-cli/agentis",
   "version": "0.1.0",
   "description": "Visualize Claude Code sessions as an interactive pixel-art world — runs entirely on your machine",
   "license": "MIT",

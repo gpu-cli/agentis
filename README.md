@@ -13,12 +13,12 @@ Privacy-first by design: transcript parsing and visualization run entirely on yo
 ## Quick Start
 
 ```bash
-npx @agentis/local
+npx @gpu-cli/agentis
 ```
 
 That's it. Auto-discovers your Claude Code sessions from `~/.claude/projects/` and opens a local visualization at `http://127.0.0.1:3456`.
 
-Options: `--port <number>`, `--no-open` (skip browser). See `npx @agentis/local --help`.
+Options: `--port <number>`, `--no-open` (skip browser). See `npx @gpu-cli/agentis --help`.
 
 ### From source
 
@@ -48,7 +48,7 @@ pnpm build            # Production build
 pnpm typecheck        # TypeScript check
 pnpm test             # Run tests
 pnpm lint             # Lint
-pnpm build:local      # Build @agentis/local bundle
+pnpm build:local      # Build @gpu-cli/agentis bundle
 pnpm local:run        # Run local server
 pnpm local:pack-run   # Package + run via npx (tests real artifact)
 pnpm local:clean      # Remove bundle/tarball artifacts
