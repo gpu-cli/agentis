@@ -95,7 +95,9 @@ PNPM_STORE="$STANDALONE_DIR/node_modules/.pnpm"
 ROOT_NM="$STANDALONE_DIR/node_modules"
 
 if [ -d "$PNPM_STORE" ]; then
-  # For each package version dir in .pnpm/, hoist its node_modules entries
+  # For each package version dir in .pnpm/, hoist its node_modules entries.
+  # pnpm creates symlinks in node_modules/ pointing into .pnpm/ — we replace
+  # those symlinks with real copies so the bundle is self-contained.
   for pkg_dir in "$PNPM_STORE"/*/node_modules/*; do
     [ -d "$pkg_dir" ] || continue
     pkg_name=$(basename "$pkg_dir")
@@ -104,21 +106,33 @@ if [ -d "$PNPM_STORE" ]; then
     parent_dir=$(dirname "$pkg_dir")
     grandparent=$(basename "$(dirname "$parent_dir")")
     if [[ "$grandparent" == "node_modules" ]]; then
-      # This is a scoped package entry like .pnpm/X/node_modules/@scope/name
       scope_dir=$(basename "$(dirname "$pkg_dir")")
       if [[ "$scope_dir" == @* ]]; then
         mkdir -p "$ROOT_NM/$scope_dir"
-        if [ ! -e "$ROOT_NM/$scope_dir/$pkg_name" ]; then
-          cp -r "$pkg_dir" "$ROOT_NM/$scope_dir/$pkg_name"
+        target="$ROOT_NM/$scope_dir/$pkg_name"
+        # Replace symlinks with real copies; skip if already a real directory
+        if [ -L "$target" ]; then
+          rm "$target"
+        elif [ -d "$target" ]; then
+          continue
         fi
+        cp -r "$pkg_dir" "$target"
         continue
       fi
     fi
 
     # Regular (non-scoped) package
-    if [ ! -e "$ROOT_NM/$pkg_name" ] && [ "$pkg_name" != ".pnpm" ]; then
-      cp -r "$pkg_dir" "$ROOT_NM/$pkg_name"
+    if [ "$pkg_name" == ".pnpm" ]; then
+      continue
     fi
+    target="$ROOT_NM/$pkg_name"
+    # Replace symlinks with real copies; skip if already a real directory
+    if [ -L "$target" ]; then
+      rm "$target"
+    elif [ -e "$target" ]; then
+      continue
+    fi
+    cp -r "$pkg_dir" "$target"
   done
 fi
 
