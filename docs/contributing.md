@@ -21,13 +21,13 @@ Agentis is a **pnpm + Turborepo** monorepo organized into packages and apps.
 ## Development setup
 
 ```bash
-git clone <repo-url>
-cd agentis
+git clone git@github.com:gpu-cli/agentis.git ~/Development/agentis
+cd ~/Development/agentis
 pnpm install
 pnpm dev
 ```
 
-`pnpm dev` starts the Next.js app on `http://localhost:3000` by default.
+`pnpm dev` starts the Next.js app on `http://localhost:3000` by default with auto-discovery of Claude Code sessions enabled.
 
 ## Key commands
 

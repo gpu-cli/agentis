@@ -23,17 +23,18 @@ Options: `--port <number>`, `--no-open` (skip browser). See `npx @gpu-cli/agenti
 ### From source
 
 ```bash
-git clone git@github.com:gpu-cli/agentis.git
-cd agentis
+git clone git@github.com:gpu-cli/agentis.git ~/Development/agentis
+cd ~/Development/agentis
 pnpm install
-pnpm build:local      # Build standalone bundle
-pnpm local:run        # Start local server
+pnpm dev              # Start dev server on :3000 with auto-discovery
 ```
 
-Or for development with hot reload:
+Or build the standalone bundle (what npm users get):
 
 ```bash
-pnpm dev              # Start Next.js dev server on :3000
+cd ~/Development/agentis
+pnpm build:local      # Build standalone bundle
+pnpm local:run        # Start local server
 ```
 
 Supported formats today:
