@@ -23,8 +23,8 @@ Options: `--port <number>`, `--no-open` (skip browser). See `npx @gpu-cli/agenti
 ### From source
 
 ```bash
-git clone git@github.com:gpu-cli/agentis.git ~/Development/agentis
-cd ~/Development/agentis
+git clone git@github.com:gpu-cli/agentis.git
+cd agentis
 pnpm install
 pnpm dev              # Start dev server on :3000 with auto-discovery
 ```
@@ -32,7 +32,6 @@ pnpm dev              # Start dev server on :3000 with auto-discovery
 Or build the standalone bundle (what npm users get):
 
 ```bash
-cd ~/Development/agentis
 pnpm build:local      # Build standalone bundle
 pnpm local:run        # Start local server
 ```
@@ -72,7 +71,7 @@ Contributions are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+MIT - see [`LICENSE`](./LICENSE).
 
 ## Credits
 

@@ -21,8 +21,8 @@ Agentis is a **pnpm + Turborepo** monorepo organized into packages and apps.
 ## Development setup
 
 ```bash
-git clone git@github.com:gpu-cli/agentis.git ~/Development/agentis
-cd ~/Development/agentis
+git clone git@github.com:gpu-cli/agentis.git
+cd agentis
 pnpm install
 pnpm dev
 ```
