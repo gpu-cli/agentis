@@ -159,6 +159,9 @@ rm -rf "$STANDALONE_WEB/public/demos"
 find "$STANDALONE_DIR/node_modules" \( -name "*.md" -o -name "CHANGELOG*" -o -name "changelog*" \) -delete 2>/dev/null || true
 find "$STANDALONE_DIR/node_modules" \( -name "__tests__" -o -name "test" -o -name "tests" -o -name ".github" \) -type d -exec rm -rf {} + 2>/dev/null || true
 
+# Remove broken symlinks left after .pnpm deletion (e.g. apps/web/node_modules/next -> .pnpm/...)
+find "$STANDALONE_DIR" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+
 # ---------------------------------------------------------------------------
 # Step 5: Copy entire standalone tree into bundle/ (preserving layout)
 # ---------------------------------------------------------------------------
@@ -167,9 +170,6 @@ echo -e "${CYAN}[5/6] Assembling bundle...${NC}"
 
 rm -rf "$BUNDLE_DIR"
 cp -r "$STANDALONE_DIR" "$BUNDLE_DIR"
-
-# Remove duplicate root-level Next.js (server.js resolves from apps/web/node_modules/next)
-rm -rf "$BUNDLE_DIR/node_modules/next"
 
 # ---------------------------------------------------------------------------
 # Step 6: Copy LICENSE into package directory for npm
