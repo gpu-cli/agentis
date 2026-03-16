@@ -1,6 +1,8 @@
 # @gpu-cli/agentis
 
-Visualize your Claude Code sessions as an interactive pixel-art world — entirely on your machine.
+Visualize your AI coding sessions as an interactive pixel-art world. Runs entirely on your machine.
+
+**Website:** [agentis.gpu-cli.sh](https://agentis.gpu-cli.sh/)
 
 ## Quick Start
 
@@ -29,9 +31,9 @@ npx @gpu-cli/agentis [options]
 
 ## Privacy
 
-- All processing happens locally — no data leaves your machine
-- Server binds to `127.0.0.1` only — not accessible from the network
-- No telemetry, no analytics, no tracking
+- All processing happens locally. No data leaves your machine.
+- Server binds to `127.0.0.1` only. Not accessible from the network.
+- No telemetry, no analytics, no tracking.
 - Open source: [github.com/gpu-cli/agentis](https://github.com/gpu-cli/agentis)
 
 ## Requirements

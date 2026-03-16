@@ -137,6 +137,29 @@ if [ -d "$PNPM_STORE" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Step 4b: Prune bloat from standalone node_modules
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}[4b/6] Pruning bloat from standalone...${NC}"
+
+# Remove .pnpm virtual store — everything has been hoisted above
+rm -rf "$STANDALONE_DIR/node_modules/.pnpm"
+
+# Remove sharp/native image binaries (images: { unoptimized: true } in next.config)
+rm -rf "$STANDALONE_DIR/node_modules/sharp"
+rm -rf "$STANDALONE_DIR/node_modules/@img"
+
+# Remove TypeScript (build-only dependency)
+rm -rf "$STANDALONE_DIR/node_modules/typescript"
+
+# Remove demo JSONL files
+rm -rf "$STANDALONE_WEB/public/demos"
+
+# Strip docs, changelogs, tests from node_modules
+find "$STANDALONE_DIR/node_modules" \( -name "*.md" -o -name "CHANGELOG*" -o -name "changelog*" \) -delete 2>/dev/null || true
+find "$STANDALONE_DIR/node_modules" \( -name "__tests__" -o -name "test" -o -name "tests" -o -name ".github" \) -type d -exec rm -rf {} + 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
 # Step 5: Copy entire standalone tree into bundle/ (preserving layout)
 # ---------------------------------------------------------------------------
 
@@ -144,6 +167,9 @@ echo -e "${CYAN}[5/6] Assembling bundle...${NC}"
 
 rm -rf "$BUNDLE_DIR"
 cp -r "$STANDALONE_DIR" "$BUNDLE_DIR"
+
+# Remove duplicate root-level Next.js (server.js resolves from apps/web/node_modules/next)
+rm -rf "$BUNDLE_DIR/node_modules/next"
 
 # ---------------------------------------------------------------------------
 # Step 6: Copy LICENSE into package directory for npm
@@ -160,7 +186,7 @@ cp "$ROOT_DIR/LICENSE" "$RUNNER_DIR/LICENSE"
 
 BUNDLE_SIZE=$(du -sh "$BUNDLE_DIR" | cut -f1)
 BUNDLE_BYTES=$(du -s "$BUNDLE_DIR" | cut -f1)
-MAX_BUNDLE_KB=200000  # 200MB uncompressed — warn if exceeded
+MAX_BUNDLE_KB=50000  # 50MB uncompressed — warn if exceeded
 
 echo ""
 echo -e "${GREEN}Bundle complete!${NC}"
