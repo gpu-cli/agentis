@@ -152,8 +152,6 @@ rm -rf "$STANDALONE_DIR/node_modules/@img"
 # Remove TypeScript (build-only dependency)
 rm -rf "$STANDALONE_DIR/node_modules/typescript"
 
-# Remove demo JSONL files
-rm -rf "$STANDALONE_WEB/public/demos"
 
 # Strip docs, changelogs, tests from node_modules
 find "$STANDALONE_DIR/node_modules" \( -name "*.md" -o -name "CHANGELOG*" -o -name "changelog*" \) -delete 2>/dev/null || true

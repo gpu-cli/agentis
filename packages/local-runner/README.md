@@ -2,8 +2,6 @@
 
 Visualize your AI coding sessions as an interactive pixel-art world. Runs entirely on your machine.
 
-**Website:** [agentis.gpu-cli.sh](https://agentis.gpu-cli.sh/)
-
 ## Quick Start
 
 ```bash
