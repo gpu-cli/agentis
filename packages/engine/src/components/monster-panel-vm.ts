@@ -99,28 +99,45 @@ function fnv1a(str: string): number {
 
 /**
  * Severity-aware codename pools.
- * Each pool has [prefix[], core[]] tuples. The codename is formed as
+ * Each pool has prefixes[], cores[], and epithets[]. The codename is formed as
  * "Prefix Core" by picking one from each using hash(monsterId).
+ * On collision, a third word (epithet) is appended instead of a number.
  *
  * These pools are intentionally disjoint from agent name pools
  * (Nova, Forge, Atlas, Alpha, Beta, etc.).
  */
-const CODENAME_POOLS: Record<string, { prefixes: readonly string[]; cores: readonly string[] }> = {
+const CODENAME_POOLS: Record<string, {
+  prefixes: readonly string[]
+  cores: readonly string[]
+  epithets: readonly string[]
+}> = {
   warning: {
-    prefixes: ['Grey', 'Faint', 'Pale', 'Dusk', 'Mist', 'Haze', 'Thin', 'Dim'],
-    cores: ['Wisp', 'Moth', 'Shade', 'Flicker', 'Murmur', 'Ember', 'Glint', 'Ripple'],
+    prefixes: ['Grey', 'Faint', 'Pale', 'Dusk', 'Mist', 'Haze', 'Thin', 'Dim',
+               'Wan', 'Soft', 'Low', 'Still', 'Cold', 'Dry', 'Slow', 'Bare'],
+    cores: ['Wisp', 'Moth', 'Shade', 'Flicker', 'Murmur', 'Ember', 'Glint', 'Ripple',
+            'Sigh', 'Drift', 'Hush', 'Trace', 'Echo', 'Veil', 'Frost', 'Spark'],
+    epithets: ['Ashen', 'Hollow', 'Silent', 'Fading', 'Distant', 'Waning', 'Fleeting', 'Sunken'],
   },
   error: {
-    prefixes: ['Iron', 'Rust', 'Bitter', 'Bleak', 'Ashen', 'Thorn', 'Bane', 'Grim'],
-    cores: ['Fang', 'Specter', 'Wraith', 'Vortex', 'Rend', 'Scourge', 'Blight', 'Fracture'],
+    prefixes: ['Iron', 'Rust', 'Bitter', 'Bleak', 'Ashen', 'Thorn', 'Bane', 'Grim',
+               'Dusk', 'Sable', 'Keen', 'Stark', 'Nether', 'Riven', 'Wicked', 'Fell'],
+    cores: ['Fang', 'Specter', 'Wraith', 'Vortex', 'Rend', 'Scourge', 'Blight', 'Fracture',
+            'Maw', 'Claw', 'Shard', 'Surge', 'Rot', 'Hex', 'Torment', 'Ruin'],
+    epithets: ['Risen', 'Unbound', 'Cursed', 'Scarred', 'Twisted', 'Ragged', 'Barbed', 'Hollow'],
   },
   critical: {
-    prefixes: ['Dire', 'Dread', 'Crimson', 'Void', 'Fell', 'Wrath', 'Doom', 'Black'],
-    cores: ['Hydra', 'Leviathan', 'Titan', 'Colossus', 'Behemoth', 'Reaper', 'Tyrant', 'Inferno'],
+    prefixes: ['Dire', 'Dread', 'Crimson', 'Void', 'Fell', 'Wrath', 'Doom', 'Black',
+               'Blood', 'Shadow', 'Storm', 'Death', 'Night', 'Dark', 'Chaos', 'Bone'],
+    cores: ['Hydra', 'Leviathan', 'Titan', 'Colossus', 'Behemoth', 'Reaper', 'Tyrant', 'Inferno',
+            'Warden', 'Phantom', 'Sovereign', 'Herald', 'Juggernaut', 'Harbinger', 'Sentinel', 'Monolith'],
+    epithets: ['Eternal', 'Ancient', 'Unchained', 'Supreme', 'Undying', 'Merciless', 'Relentless', 'Forsaken'],
   },
   outage: {
-    prefixes: ['Abyssal', 'Cataclysm', 'Oblivion', 'Ruin', 'Eclipse', 'Null', 'Extinction', 'Omega'],
-    cores: ['Drake', 'Kraken', 'Annihilator', 'Maelstrom', 'Cataclysm', 'Worldbreaker', 'Tempest', 'Ravager'],
+    prefixes: ['Abyssal', 'Oblivion', 'Ruin', 'Eclipse', 'Null', 'Extinction', 'Omega', 'End',
+               'Nether', 'Hollow', 'Sundered', 'Shattered', 'Forsaken', 'Eldritch', 'Prime', 'Apex'],
+    cores: ['Drake', 'Kraken', 'Annihilator', 'Maelstrom', 'Worldbreaker', 'Tempest', 'Ravager', 'Scourge',
+            'Devourer', 'Obliterator', 'Cataclysm', 'Dominion', 'Nexus', 'Terminus', 'Sovereign', 'Abyss'],
+    epithets: ['Ascended', 'Absolute', 'Infinite', 'Ultimate', 'Primordial', 'Boundless', 'Transcendent', 'Final'],
   },
 }
 
@@ -128,7 +145,7 @@ const CODENAME_POOLS: Record<string, { prefixes: readonly string[]; cores: reado
 const DEFAULT_POOL = CODENAME_POOLS['error']!
 
 /** Session-level codename deduplication registry */
-const usedCodenames = new Map<string, number>()
+const usedCodenames = new Set<string>()
 
 /** Reset the dedup registry (call on scenario reload) */
 export function resetErrorCodenames(): void {
@@ -139,12 +156,15 @@ export function resetErrorCodenames(): void {
  * Generate a deterministic, human-friendly codename for an error/monster.
  *
  * Uses severity-aware word pools and FNV-1a hash of the monster ID for
- * deterministic selection. Handles collisions within a session by appending
- * a Roman numeral suffix (II, III, IV...).
+ * deterministic selection. On collision, appends a third word (epithet)
+ * from a dedicated pool — never digits or Roman numerals.
+ *
+ * With 16 prefixes x 16 cores = 256 base combinations per severity,
+ * plus 8 epithets for collision expansion = 2048 total unique names.
  *
  * @param monsterId - Unique monster ID (required for determinism)
  * @param severity  - Monster severity level (selects the word pool)
- * @returns A codename like "Iron Specter" or "Dire Hydra II"
+ * @returns A codename like "Iron Specter" or "Dire Hydra Eternal"
  */
 export function generateErrorCodename(monsterId: string, severity: string): string {
   const pool = CODENAME_POOLS[severity] ?? DEFAULT_POOL
@@ -155,16 +175,49 @@ export function generateErrorCodename(monsterId: string, severity: string): stri
   const core = pool.cores[(hash >>> 16) % pool.cores.length]!
   const baseName = `${prefix} ${core}`
 
-  // Dedup within session: if this exact codename was already issued, suffix it
-  const count = usedCodenames.get(baseName) ?? 0
-  usedCodenames.set(baseName, count + 1)
+  // If base name is unique in this session, use it directly
+  if (!usedCodenames.has(baseName)) {
+    usedCodenames.add(baseName)
+    return baseName
+  }
 
-  if (count === 0) return baseName
+  // Collision: append an epithet chosen by a different hash mix
+  const epithetHash = fnv1a(monsterId + ':epithet')
+  const epithet = pool.epithets[epithetHash % pool.epithets.length]!
+  const expanded = `${baseName} ${epithet}`
 
-  // Roman numeral suffixes for collisions (deterministic, readable)
-  const ROMAN = ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
-  const suffix = count <= ROMAN.length ? ROMAN[count - 1]! : `${count + 1}`
-  return `${baseName} ${suffix}`
+  if (!usedCodenames.has(expanded)) {
+    usedCodenames.add(expanded)
+    return expanded
+  }
+
+  // Extremely rare double-collision: try remaining epithets deterministically
+  for (let i = 0; i < pool.epithets.length; i++) {
+    const candidate = `${baseName} ${pool.epithets[i]!}`
+    if (!usedCodenames.has(candidate)) {
+      usedCodenames.add(candidate)
+      return candidate
+    }
+  }
+
+  // Exhausted all epithets: use a unique word-based suffix from the hash
+  const fallback = `${baseName} ${hashWord(monsterId)}`
+  usedCodenames.add(fallback)
+  return fallback
+}
+
+/** Generate a pronounceable word-like suffix from a hash (no digits) */
+function hashWord(id: string): string {
+  const h = fnv1a(id + ':word')
+  const consonants = 'bcdfghjklmnprstvwz'
+  const vowels = 'aeiou'
+  // Build a 4-letter pronounceable token: CVCV
+  const c1 = consonants[h % consonants.length]!
+  const v1 = vowels[(h >>> 4) % vowels.length]!
+  const c2 = consonants[(h >>> 8) % consonants.length]!
+  const v2 = vowels[(h >>> 12) % vowels.length]!
+  const word = c1 + v1 + c2 + v2
+  return word.charAt(0).toUpperCase() + word.slice(1)
 }
 
 // ---------------------------------------------------------------------------
@@ -220,9 +273,9 @@ function deriveDescriptor(
   const tool = errorDetails?.tool_name
   const sig = extractSignature(errorDetails?.message)
 
-  if (tool && sig) return `${tool} ${sig}`
+  if (tool && sig) return tool + ': ' + sig
   if (sig) return sig
-  if (tool) return `${tool} failed`
+  if (tool) return tool + ' failure'
 
   const excerpt = extractExcerpt(errorDetails?.message)
   if (excerpt) return excerpt

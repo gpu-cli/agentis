@@ -507,7 +507,10 @@ function toAgent(actor: ActorRef, snapshot: WorldModelSnapshot, index: number): 
   const x = workLoc ? workLoc.x + jitterX : 10
   const y = workLoc ? workLoc.y + jitterY : 10
 
-  const agentType = 'claude'
+  // Deterministically assign agent type from pool based on actor ID
+  // so different agents get visually distinct sprites
+  const AGENT_TYPES = ['claude', 'cursor', 'codex', 'gemini', 'openclaw'] as const
+  const agentType = AGENT_TYPES[djb2(actor.id + ':type') % AGENT_TYPES.length]!
 
   // Collect unique tools used across all work units for this agent
   const usedToolNames = collectUsedTools(actor.id, snapshot)

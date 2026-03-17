@@ -653,13 +653,24 @@ function dispatchEvent(event: AgentEvent): void {
         const occupied = collectOccupiedPositions(agentMap, monsters.monsters)
         const finalPosition = findNonOverlappingPosition(position, occupied)
 
+        // Deterministically assign agent type from pool based on ID
+        // so different subagents get visually distinct sprites
+        const AGENT_TYPES = ['claude', 'cursor', 'codex', 'gemini', 'openclaw'] as const
+        const spawnHash = ((): number => {
+          let h = 5381
+          const s = newAgentId + ':type'
+          for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+          return Math.abs(h)
+        })()
+        const agentType = AGENT_TYPES[spawnHash % AGENT_TYPES.length]!
+
         agentMap.set(newAgentId, {
           id: newAgentId,
           universe_id: 'universe_imported',
           name: `Agent ${newAgentId.slice(-6)}`,
-          type: 'claude',
+          type: agentType,
           sprite_config: {
-            sprite_sheet: 'agents/claude',
+            sprite_sheet: `agents/${agentType}`,
             idle_animation: 'idle',
             walk_animation: 'walk',
             combat_animation: 'combat',

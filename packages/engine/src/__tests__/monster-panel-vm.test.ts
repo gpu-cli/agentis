@@ -426,14 +426,14 @@ describe('panelTitle', () => {
     const monster = makeMonster({
       error_details: { message: 'ECONNREFUSED on port 3000', tool_name: 'Deploy' },
     })
-    expect(panelTitle(monster, 'local_failure')).toBe('Deploy Connection refused')
+    expect(panelTitle(monster, 'local_failure')).toBe('Deploy: Connection refused')
   })
 
-  it('returns "Tool failed" when only tool present', () => {
+  it('returns "Tool failure" when only tool present', () => {
     const monster = makeMonster({
       error_details: { message: 'Something broke', tool_name: 'Bash' },
     })
-    expect(panelTitle(monster, 'local_failure')).toBe('Bash failed')
+    expect(panelTitle(monster, 'local_failure')).toBe('Bash failure')
   })
 
   it('returns signature when only signature present', () => {
@@ -488,16 +488,18 @@ describe('generateErrorCodename', () => {
     expect(warning).not.toBe(critical)
   })
 
-  it('handles collisions with Roman numeral suffixes', () => {
-    // Force two different IDs that produce the same codename by generating many
-    // and checking if any duplicates get suffixed
+  it('handles collisions with word-based expansion (no digits)', () => {
     const names: string[] = []
     for (let i = 0; i < 100; i++) {
       names.push(generateErrorCodename(`monster_collision_${i}`, 'error'))
     }
-    // All names should be unique (collisions get suffixed)
+    // All names should be unique (collisions get expanded with epithets)
     const unique = new Set(names)
     expect(unique.size).toBe(names.length)
+    // No name should contain any digit
+    for (const name of names) {
+      expect(name).not.toMatch(/\d/)
+    }
   })
 
   it('codenames do not overlap with agent name pools', () => {
@@ -537,7 +539,7 @@ describe('deriveErrorName', () => {
     expect(result.short.split(' ').length).toBeGreaterThanOrEqual(2)
     expect(result.codename).toBe(result.short)
     // full should be the technical descriptor
-    expect(result.full).toBe('Deploy Connection refused')
+    expect(result.full).toBe('Deploy: Connection refused')
     expect(result.descriptor).toBe(result.full)
   })
 
@@ -546,9 +548,9 @@ describe('deriveErrorName', () => {
     expect(result.descriptor).toBe('Type error')
   })
 
-  it('returns tool failed descriptor when no signature', () => {
+  it('returns tool failure descriptor when no signature', () => {
     const result = deriveErrorName({ message: 'Something went wrong', tool_name: 'Bash' }, 'error', 'monster_test_3')
-    expect(result.descriptor).toBe('Bash failed')
+    expect(result.descriptor).toBe('Bash failure')
   })
 
   it('extracts excerpt from raw message when no tool/signature', () => {

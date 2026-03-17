@@ -83,15 +83,16 @@ const DEFAULT_CONFIG: EntitySpriteConfig = {
 }
 
 // ---------------------------------------------------------------------------
-// String hash (djb2) — deterministic, fast, collision-resistant enough
+// FNV-1a 32-bit hash — better avalanche than djb2 for similar agent IDs
 // ---------------------------------------------------------------------------
 
-function djb2Hash(str: string): number {
-  let hash = 5381
+function fnv1aHash(str: string): number {
+  let hash = 0x811c9dc5
   for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0
+    hash ^= str.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
   }
-  return Math.abs(hash)
+  return hash >>> 0
 }
 
 // ---------------------------------------------------------------------------
@@ -244,8 +245,8 @@ export class EntitySpriteMap {
       return agentConfig.base
     }
 
-    // Deterministic variant: hash the agent ID
-    const idx = djb2Hash(agentId) % variants.length
+    // Deterministic variant: hash the agent ID with FNV-1a for better spread
+    const idx = fnv1aHash(agentId) % variants.length
     const key = variants[idx] ?? agentConfig.base
     this.agentCache.set(agentId, key)
     return key
@@ -308,7 +309,7 @@ export class EntitySpriteMap {
     if (entry.length === 0) return FALLBACK_EVENT_KEY
     if (!eventId || entry.length === 1) return entry[0] ?? FALLBACK_EVENT_KEY
 
-    const idx = djb2Hash(eventId) % entry.length
+    const idx = fnv1aHash(eventId) % entry.length
     return entry[idx] ?? entry[0] ?? FALLBACK_EVENT_KEY
   }
 
