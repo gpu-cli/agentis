@@ -43,7 +43,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build standalone bundle
-        run: pnpm build:local
+        run: ./scripts/build-local.sh
         env:
           AGENTIS_LOCAL_MODE: 'true'
           NEXT_PUBLIC_AGENTIS_LOCAL: 'true'

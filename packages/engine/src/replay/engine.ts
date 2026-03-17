@@ -77,7 +77,7 @@ export class ReplayEngine {
   restart(): void {
     this.clearTimer()
     this.updateState({
-      playbackState: 'paused',
+      playbackState: 'idle',
       currentEventIndex: 0,
       progress: 0,
     })
