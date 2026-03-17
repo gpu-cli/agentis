@@ -1,6 +1,6 @@
 {
   "name": "@gpu-cli/agentis",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Visualize AI coding sessions as an interactive pixel-art world. Runs entirely on your machine.",
   "license": "MIT",
   "type": "module",
