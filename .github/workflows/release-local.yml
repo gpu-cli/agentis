@@ -16,6 +16,10 @@ on:
     tags:
       - 'local-v*'
 
+concurrency:
+  group: release-local
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write  # Required for npm provenance
