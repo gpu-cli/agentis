@@ -11,11 +11,13 @@
 // Defeated monsters fade out over 2 seconds then are removed.
 // ============================================================================
 
-import { Container, Graphics, Sprite, Text, TextStyle } from 'pixi.js'
+import { Container, Graphics, Sprite, Text, TextStyle, Texture } from 'pixi.js'
 import type { Monster, MonsterSeverity } from '@multiverse/shared'
 import { useMonsterStore } from '../stores/monsterStore'
 import { useUIStore } from '../stores/uiStore'
 import { AssetLoader } from './AssetLoader'
+import { entitySprites } from './entity-sprite-map'
+import { deriveErrorName, resetErrorCodenames } from '../components/monster-panel-vm'
 
 const TILE_SIZE = 32
 const CHUNK_SIZE = 64
@@ -66,7 +68,7 @@ export class MonsterManager {
   constructor() {
     this.container = new Container()
     this.container.label = 'monsters'
-    this.container.zIndex = 43
+    this.container.zIndex = 41 // Below agents (42) so errors never render on top
 
     this.unsubscribe = useMonsterStore.subscribe(() => {
       this.syncMonsters()
@@ -120,23 +122,22 @@ export class MonsterManager {
     auraRing.visible = true
     container.addChild(auraRing)
 
-    // Body sprite
-    const bodyTex = assets.getMonsterTexture(monster.monster_type)
+    // Body sprite — use deterministic variant from entity sprite map
+    // so different monsters of the same severity get visually distinct sprites
+    const variantKey = entitySprites.resolveEventVariant('error', monster.severity, monster.id)
+    const variantTex = assets.getAnyTileTexture(variantKey)
+    // Fall back to legacy monster texture if atlas lookup yields the white placeholder
+    const bodyTex = (variantTex === Texture.WHITE)
+      ? assets.getMonsterTexture(monster.monster_type)
+      : variantTex
     const bodySprite = new Sprite(bodyTex)
     bodySprite.anchor.set(0.5)
     bodySprite.width = size
     bodySprite.height = size
     container.addChild(bodySprite)
 
-    // Name label above — show severity, not the raw error message
-    const FRIENDLY_LABELS: Record<string, string> = {
-      warning: 'Warning',
-      error: 'Error',
-      critical: 'Critical',
-      outage: 'Outage',
-    }
-    const label = FRIENDLY_LABELS[monster.severity] ?? 'Error'
-    const shortLabel = label.length > 20 ? label.slice(0, 19) + '…' : label
+    // Name label above — derive from error details for specificity
+    const { short: shortLabel } = deriveErrorName(monster.error_details, monster.severity, monster.id)
     const nameLabel = new Text({ text: shortLabel, style: nameStyle })
     nameLabel.anchor.set(0.5, 1)
     nameLabel.y = -size / 2 - 4
@@ -180,14 +181,15 @@ export class MonsterManager {
   }
 
   private updateMonsterSprite(sprite: MonsterSprite, monster: Monster): void {
-    // Update position
-    const pos = this.worldToPixel(monster.position)
-    sprite.container.x = pos.x
-    sprite.container.y = pos.y
-
     // Track defeated time
     if (monster.status === 'defeated' && !sprite.defeatedAt) {
       sprite.defeatedAt = Date.now()
+    }
+
+    // Update label if error details were enriched after spawn
+    const { short: currentLabel } = deriveErrorName(monster.error_details, monster.severity, monster.id)
+    if (sprite.nameLabel.text !== currentLabel) {
+      sprite.nameLabel.text = currentLabel
     }
 
     // Update health bar
@@ -257,6 +259,8 @@ export class MonsterManager {
       }
     }
     this.sprites.clear()
+    // Reset codename dedup so a fresh scenario gets fresh codename assignments
+    resetErrorCodenames()
   }
 
   destroy(): void {

@@ -5,6 +5,9 @@ const isStaticExport = process.env.AGENTIS_STATIC_EXPORT === "true";
 
 const nextConfig: NextConfig = {
   images: { unoptimized: true },
+  experimental: {
+    reactCompiler: true,
+  },
   output: isStaticExport ? "export" : "standalone",
   ...(isStaticExport ? {} : { outputFileTracingRoot: path.join(__dirname, "../../") }),
   transpilePackages: [

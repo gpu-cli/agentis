@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { useCallback, useRef, useState, type ReactNode } from 'react'
-import { ScrollArea, ScrollBar } from '@multiverse/ui'
+import { ScrollArea } from '@multiverse/ui'
 
 const MIN_WIDTH = 256
 const DEFAULT_WIDTH = 320
@@ -60,20 +60,24 @@ export function ResizableSidePanel({ children, className }: ResizableSidePanelPr
 
   return (
     <div
-      className={`absolute top-0 right-0 h-full bg-gray-800/95 backdrop-blur-sm border-l border-gray-700 z-30 flex flex-col overflow-hidden ${className ?? ''}`}
+      className={`absolute inset-y-0 right-0 max-h-full bg-surface-2/95 backdrop-blur-sm border-l border-border z-30 flex flex-col overflow-hidden ${className ?? ''}`}
       style={{ width }}
     >
-      {/* Drag handle — left edge, always visible */}
+      {/* Drag handle — left edge rail (full height hit target) + visible centered grip */}
       <div
-        className="absolute top-0 left-0 w-3 h-full cursor-col-resize z-10 group flex items-center justify-center"
+        className="absolute top-0 left-0 w-3 h-full cursor-col-resize z-10 group"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-      />
+      >
+        {/* Visible grip pill — centered vertically on the left edge */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-8 rounded-full bg-border group-hover:bg-muted-foreground/60 transition-colors" />
+      </div>
 
-      <ScrollArea className="flex-1">
-        {children}
-        <ScrollBar orientation="horizontal" />
+      <ScrollArea className="flex-1 min-h-0" type="auto">
+        <div className="overflow-x-hidden">
+          {children}
+        </div>
       </ScrollArea>
     </div>
   )

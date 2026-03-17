@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { Component, type ReactNode, type ErrorInfo } from 'react'
+import { Button } from '@multiverse/ui'
 
 interface Props {
   children: ReactNode
@@ -28,20 +29,22 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.error) {
       return (
         this.props.fallback ?? (
-          <div className="w-full h-full bg-gray-950 flex items-center justify-center p-8">
+          <div className="w-full h-full bg-background flex items-center justify-center p-8">
             <div className="max-w-md text-center">
               <h2 className="text-red-400 font-pixel text-sm mb-2">
                 Rendering Error
               </h2>
-              <p className="text-gray-400 text-xs mb-4">
+              <p className="text-muted-foreground text-xs mb-4">
                 {this.state.error.message}
               </p>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => this.setState({ error: null })}
-                className="text-xs px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-200"
+                className="h-7 bg-muted px-3 text-xs text-card-foreground hover:bg-accent"
               >
                 Try Again
-              </button>
+              </Button>
             </div>
           </div>
         )

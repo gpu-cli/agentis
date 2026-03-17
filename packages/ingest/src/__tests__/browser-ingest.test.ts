@@ -348,6 +348,16 @@ export function runProjectorTest(): void {
   const errorEvents = bootstrapped.events.filter((e) => e.type === 'error_spawn')
   assert.ok(errorEvents.length >= 1, 'should have error_spawn events')
 
+  // Error events should carry severity from linked issues
+  for (const errEvt of errorEvents) {
+    const meta = errEvt.metadata as Record<string, unknown> | undefined
+    assert.ok(meta?.severity, `error_spawn event ${errEvt.id} should have severity in metadata`)
+    assert.ok(
+      ['warning', 'error', 'critical', 'outage'].includes(meta!.severity as string),
+      `error_spawn severity should be a valid MonsterSeverity, got: ${meta!.severity}`,
+    )
+  }
+
   // Determinism
   const { scenario: again } = buildBootstrapScenario(pkg)
   assert.equal(

@@ -10,11 +10,15 @@ import type { WorldEventCategory } from '../stores/eventStore'
 import { useAgentStore } from '../stores/agentStore'
 import { useUniverseStore } from '../stores/universeStore'
 
-import { ScrollArea, ScrollBar } from '@multiverse/ui'
+import { Button, ScrollArea, ScrollBar } from '@multiverse/ui'
 
 const ALL_CATEGORIES: WorldEventCategory[] = [
   'error', 'deployment', 'file_change', 'task', 'comms', 'combat',
 ]
+
+type IslandsMap = ReturnType<typeof useUniverseStore.getState>['islands']
+type DistrictsMap = ReturnType<typeof useUniverseStore.getState>['districts']
+type BuildingsMap = ReturnType<typeof useUniverseStore.getState>['buildings']
 
 /** Format a timestamp as relative time */
 function relativeTime(processedAt: number): string {
@@ -27,11 +31,12 @@ function relativeTime(processedAt: number): string {
 }
 
 /** Resolve event location to a readable breadcrumb */
-function resolveEventLocation(event: { target?: { building_id?: string; district_id?: string; island_id?: string } }): string {
-  const islands = useUniverseStore.getState().islands
-  const districts = useUniverseStore.getState().districts
-  const buildings = useUniverseStore.getState().buildings
-
+function resolveEventLocation(
+  event: { target?: { building_id?: string; district_id?: string; island_id?: string } },
+  islands: IslandsMap,
+  districts: DistrictsMap,
+  buildings: BuildingsMap,
+): string {
   const parts: string[] = []
 
   if (event.target?.building_id) {
@@ -79,6 +84,9 @@ export function EventLog() {
   const eventFilters = useEventStore((s) => s.eventFilters)
   const toggleFilter = useEventStore((s) => s.toggleEventFilter)
   const agents = useAgentStore((s) => s.agents)
+  const islands = useUniverseStore((s) => s.islands)
+  const districts = useUniverseStore((s) => s.districts)
+  const buildings = useUniverseStore((s) => s.buildings)
 
   // Derive filtered world events in-component to avoid creating new arrays
   // inside the Zustand selector (which causes infinite re-render loops).
@@ -110,40 +118,44 @@ export function EventLog() {
       className="absolute top-2 left-2 w-72 z-20 transition-all duration-200"
     >
       {/* Header */}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => setCollapsed(!collapsed)}
-        className={`w-full flex items-center justify-between bg-gray-900/80 backdrop-blur-sm border border-gray-700/50 px-3 py-2 hover:bg-gray-800/80 transition-colors ${collapsed ? 'rounded-lg' : 'rounded-t-lg'}`}
+        className={`h-auto w-full justify-between border border-border/50 bg-surface-2/95 px-3 py-2 backdrop-blur-sm hover:bg-accent/80 ${collapsed ? 'rounded-lg' : 'rounded-t-lg'}`}
       >
         <div className="flex items-center gap-2">
-          <span className="font-pixel text-[10px] text-gray-300">Event Log</span>
-          <span className="text-[9px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">
+          <span className="font-pixel text-[10px] text-card-foreground">Event Log</span>
+          <span className="text-[9px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
             {filteredEvents.length}
           </span>
         </div>
-        <span className="text-gray-500 text-xs">
+        <span className="text-muted-foreground text-xs">
           {collapsed ? '▼' : '▲'}
         </span>
-      </button>
+      </Button>
 
       {!collapsed && (
-        <div className="bg-gray-900/80 backdrop-blur-sm border border-t-0 border-gray-700/50 rounded-b-lg overflow-hidden">
+        <div className="bg-surface-2/95 backdrop-blur-sm border border-t-0 border-border/50 rounded-b-lg overflow-hidden">
           {/* Filter pills — horizontal scroll, no visible scrollbar */}
-          <ScrollArea className="w-full border-b border-gray-700/30">
+          <ScrollArea className="w-full border-b border-border/30">
             <div className="flex flex-nowrap gap-1 px-2 py-1.5">
               {ALL_CATEGORIES.map((cat) => {
                 const active = eventFilters.has(cat)
                 return (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     key={cat}
                     onClick={() => toggleFilter(cat)}
-                    className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded transition-colors ${
+                    className={`h-5 shrink-0 px-1.5 text-[9px] ${
                       active
-                        ? 'bg-gray-700 text-gray-200'
-                        : 'bg-gray-800/50 text-gray-600'
+                        ? 'bg-muted text-card-foreground'
+                        : 'bg-card/50 text-muted-foreground/60'
                     }`}
                   >
                     {EVENT_CATEGORY_ICONS[cat]} {EVENT_CATEGORY_LABELS[cat]}
-                  </button>
+                  </Button>
                 )
               })}
             </div>
@@ -153,14 +165,14 @@ export function EventLog() {
           {/* Event list — vertical scroll via ShadCN ScrollArea */}
           <ScrollArea ref={scrollRef} viewportClassName="max-h-[60vh]">
             {displayEvents.length === 0 && (
-              <p className="text-[10px] text-gray-600 italic px-3 py-3 text-center">
+              <p className="text-[10px] text-muted-foreground/60 italic px-3 py-3 text-center">
                 No events yet
               </p>
             )}
             {displayEvents.map((log) => {
               const category = classifyEvent(log.event)
               const description = describeEvent(log.event)
-              const location = resolveEventLocation(log.event)
+              const location = resolveEventLocation(log.event, islands, districts, buildings)
               const errorDetail = getErrorDetail(log.event)
               const toolDetail = getToolDetail(log.event)
               const agent = agents.get(log.event.agent_id)
@@ -169,38 +181,38 @@ export function EventLog() {
               return (
                 <div
                   key={log.event.id}
-                  className="px-2.5 py-1.5 border-b border-gray-800/50 hover:bg-gray-800/40 transition-colors"
+                  className="px-2.5 py-1.5 border-b border-border/50 hover:bg-accent/40 transition-colors"
                 >
                   <div className="flex items-start gap-1.5">
                     <span className="text-[10px] shrink-0 mt-0.5">{icon}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[10px] text-gray-300 leading-tight truncate" title={description}>
+                      <p className="text-[10px] text-card-foreground leading-tight truncate" title={description}>
                         {description}
                       </p>
-                      {toolDetail && (
-                        <p className="text-[9px] text-gray-400 font-mono leading-tight truncate mt-0.5" title={toolDetail}>
-                          {toolDetail}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {location && (
-                          <span className="text-[9px] text-gray-500 truncate" title={location}>
-                            {location}
-                          </span>
-                        )}
-                        {agent && (
-                          <span className="text-[9px] text-green-400">
-                            [{agent.name}]
-                          </span>
-                        )}
-                      </div>
                       {errorDetail && (
                         <p className="text-[9px] text-red-400/80 leading-tight truncate mt-0.5" title={errorDetail}>
                           {errorDetail}
                         </p>
                       )}
+                      {toolDetail && (
+                        <p className="text-[9px] text-muted-foreground font-mono leading-tight truncate mt-0.5" title={toolDetail}>
+                          {toolDetail}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {agent && (
+                          <span className="text-[9px] text-green-400">
+                            [{agent.name}]
+                          </span>
+                        )}
+                        {location && (
+                          <span className="text-[9px] text-muted-foreground truncate" title={location}>
+                            {location}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-[9px] text-gray-600 shrink-0 mt-0.5">
+                    <span className="text-[9px] text-muted-foreground/60 shrink-0 mt-0.5">
                       {relativeTime(log.processedAt)}
                     </span>
                   </div>

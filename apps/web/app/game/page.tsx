@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { GameContent } from "./game-content";
 
 export const metadata: Metadata = {
-  title: "Game — Multiverse",
+  title: "Game — Agentis",
   description: "Interactive pixel-art world visualizing coding sessions",
 };
 

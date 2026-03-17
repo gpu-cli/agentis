@@ -28,6 +28,16 @@ const TILE_SIZE = 32
 const CHUNK_SIZE = 64
 
 // ---------------------------------------------------------------------------
+// Fog reveal radius multipliers (fraction of agent.vision_radius * TILE_SIZE)
+// ---------------------------------------------------------------------------
+/** Clicked/selected agent — intentionally compact to avoid over-revealing */
+const REVEAL_SELECTED = 0.375
+/** Agent actively working — moderate presence */
+const REVEAL_ACTIVE = 0.4
+/** Idle agent — minimal presence */
+const REVEAL_IDLE = 0.2
+
+// ---------------------------------------------------------------------------
 // District wall geometry constants — must match TilemapManager exactly
 // ---------------------------------------------------------------------------
 const WALL_INSET = 6
@@ -275,10 +285,10 @@ export class FogOfWar {
 
       const baseRadius = agent.vision_radius * TILE_SIZE
       const radius = isSelected
-        ? baseRadius * 0.75
+        ? baseRadius * REVEAL_SELECTED
         : isIdle
-          ? baseRadius * 0.2
-          : baseRadius * 0.4
+          ? baseRadius * REVEAL_IDLE
+          : baseRadius * REVEAL_ACTIVE
 
       this.revealMask.circle(px, py, radius)
       this.revealMask.fill({ color: 0xffffff, alpha: 1 })

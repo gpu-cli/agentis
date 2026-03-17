@@ -157,6 +157,8 @@ function processEventForDiffs(event: AgentEvent): void {
 
         recalcBuilding(buildingId)
       }
+      // Auto-move agent to the file being created (mirrors store-side autoMoveAgentToWorkTarget)
+      emitAgentMoveForWorkEvent(event)
       break
     }
 
@@ -188,6 +190,8 @@ function processEventForDiffs(event: AgentEvent): void {
         const resolvedBuildingId = tileBuildingMap.get(tileId)
         if (resolvedBuildingId) recalcBuilding(resolvedBuildingId)
       }
+      // Auto-move agent to the file being edited
+      emitAgentMoveForWorkEvent(event)
       break
     }
 
@@ -206,9 +210,11 @@ function processEventForDiffs(event: AgentEvent): void {
           const bId = tileBuildingMap.get(tileId)
           tileBuildingMap.delete(tileId)
           if (bId) recalcBuilding(bId)
-        }, 1500) as unknown as number
+        }, 1500 / Math.max(0.1, speed)) as unknown as number
         pendingDeleteTimers.add(timerId)
       }
+      // Auto-move agent to the file being deleted
+      emitAgentMoveForWorkEvent(event)
       break
     }
 
@@ -221,6 +227,8 @@ function processEventForDiffs(event: AgentEvent): void {
           target_id: buildingId,
           color: undefined,
         })
+        // Auto-move agent to the building being worked on
+        emitAgentMoveForWorkEvent(event)
       }
       break
     }
@@ -228,6 +236,37 @@ function processEventForDiffs(event: AgentEvent): void {
     default:
       break
   }
+}
+
+/**
+ * Auto-move the agent to the building/tile targeted by a work event.
+ * Mirrors store-side autoMoveAgentToWorkTarget() to keep diff-driven
+ * rendering in sync with store-driven rendering.
+ */
+function emitAgentMoveForWorkEvent(event: AgentEvent): void {
+  const buildingId = event.target?.building_id
+  if (!buildingId) return
+
+  const bpos = buildingPositions.get(buildingId)
+  if (!bpos) return
+
+  // Use tile-local offset when available so the agent walks to the exact file tile
+  const local = (event.metadata as { local?: { x: number; y: number } })?.local
+  const TILE = 32
+  const px = local
+    ? bpos.x + local.x * TILE + TILE / 2
+    : bpos.x
+  const py = local
+    ? bpos.y + local.y * TILE + TILE / 2
+    : bpos.y
+
+  agentPositions.set(event.agent_id, { x: px, y: py })
+  coalescer.add({
+    type: 'agent_move',
+    id: event.agent_id,
+    x: px,
+    y: py,
+  })
 }
 
 /** Recalculate building file_count and health, emit building_stats diff */

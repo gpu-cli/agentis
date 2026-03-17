@@ -6,6 +6,7 @@
 // =============================================================================
 
 import { useEffect, useState } from 'react'
+import { Button } from '@multiverse/ui'
 
 interface RuntimeErrorInfo {
   message: string
@@ -47,15 +48,16 @@ export function GlobalErrorCatcher() {
           {lastError.message}
         </div>
         <div className="mt-1 flex gap-2 text-[10px] justify-end">
-          <button
-            className="px-2 py-0.5 bg-red-800/60 hover:bg-red-700 rounded"
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-6 bg-red-800/60 px-2 text-[10px] hover:bg-red-700"
             onClick={() => setLastError(null)}
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       </div>
     </div>
   )
 }
-

@@ -405,6 +405,117 @@ function isWorkItemStatus(value: string | undefined): value is 'queued' | 'activ
   return typeof value === 'string' && WORK_ITEM_STATUSES.has(value)
 }
 
+// ---------------------------------------------------------------------------
+// Shared Placement Helpers
+// ---------------------------------------------------------------------------
+
+/** Spiral offsets used by all placement routines — deterministic outward search */
+const SPIRAL_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1],
+  [2, 0], [0, 2], [-2, 0], [0, -2], [2, 1], [1, 2], [-1, 2], [-2, 1],
+  [-2, -1], [-1, -2], [1, -2], [2, -1], [3, 0], [0, 3], [-3, 0], [0, -3],
+] as const
+
+/**
+ * Collect all occupied tile keys from agents and active monsters.
+ * Returns a Set of "local_x,local_y" strings for O(1) collision checks.
+ */
+function collectOccupiedPositions(
+  agentMap: Map<string, import('@multiverse/shared').Agent>,
+  monsters: Map<string, import('@multiverse/shared').Monster>,
+  excludeAgentId?: string,
+): Set<string> {
+  const occupied = new Set<string>()
+  for (const [id, agent] of agentMap) {
+    if (id === excludeAgentId) continue
+    occupied.add(`${agent.position.local_x},${agent.position.local_y}`)
+  }
+  for (const m of monsters.values()) {
+    if (m.status !== 'defeated') {
+      occupied.add(`${m.position.local_x},${m.position.local_y}`)
+    }
+  }
+  return occupied
+}
+
+/**
+ * Find the first non-overlapping position near `anchor` using spiral search.
+ * Checks against both agents and active monsters so entities never stack.
+ */
+function findNonOverlappingPosition(
+  anchor: WorldCoord,
+  occupied: Set<string>,
+): WorldCoord {
+  for (const [dx, dy] of SPIRAL_OFFSETS) {
+    const testPos = {
+      ...anchor,
+      local_x: anchor.local_x + dx,
+      local_y: anchor.local_y + dy,
+    }
+    const key = `${testPos.local_x},${testPos.local_y}`
+    if (!occupied.has(key)) {
+      return testPos
+    }
+  }
+  // All spiral slots occupied — fall back to anchor (extremely rare)
+  return anchor
+}
+
+/**
+ * Resolve the target building position for an event, accounting for
+ * tile-local coordinates when available (agent moves to the exact tile).
+ */
+function resolveWorkTarget(
+  event: AgentEvent,
+  universe: ReturnType<typeof useUniverseStore.getState>,
+): WorldCoord | null {
+  const buildingId = event.target?.building_id
+  if (!buildingId) return null
+
+  const building = universe.buildings.get(buildingId)
+  if (!building) return null
+
+  // Use tile-local offset when available so the agent walks to the exact file tile
+  const local = (event.metadata as { local?: { x: number; y: number } })?.local
+  if (local && typeof local.x === 'number' && typeof local.y === 'number') {
+    return {
+      ...building.position,
+      local_x: building.position.local_x + local.x,
+      local_y: building.position.local_y + local.y,
+    }
+  }
+
+  return building.position
+}
+
+/**
+ * Auto-move an agent to the building/tile targeted by a work event.
+ * Called for file_create, file_edit, file_delete, and tool_use events.
+ * Uses collision-safe placement to avoid overlapping other agents and monsters.
+ */
+function autoMoveAgentToWorkTarget(
+  event: AgentEvent,
+  universe: ReturnType<typeof useUniverseStore.getState>,
+  agents: ReturnType<typeof useAgentStore.getState>,
+  monsters: ReturnType<typeof useMonsterStore.getState>,
+): void {
+  const target = resolveWorkTarget(event, universe)
+  if (!target) return
+
+  agents.batchUpdate((agentMap) => {
+    const agent = agentMap.get(event.agent_id)
+    if (!agent) return
+
+    const occupied = collectOccupiedPositions(agentMap, monsters.monsters, event.agent_id)
+    const finalPosition = findNonOverlappingPosition(target, occupied)
+    agentMap.set(event.agent_id, { ...agent, position: finalPosition, status: 'active' })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Event Dispatch — Routes events to the correct store actions
+// ---------------------------------------------------------------------------
+
 function dispatchEvent(event: AgentEvent): void {
   const universe = useUniverseStore.getState()
   const agents = useAgentStore.getState()
@@ -425,6 +536,8 @@ function dispatchEvent(event: AgentEvent): void {
         const position = meta.local ?? { x: 0, y: 0 }
         universe.addTile(tileId, buildingId, fileName, position, event.agent_id)
       }
+      // Auto-move agent to the file being created
+      autoMoveAgentToWorkTarget(event, universe, agents, monsters)
       break
     }
 
@@ -445,6 +558,8 @@ function dispatchEvent(event: AgentEvent): void {
         const newState = meta.state === 'complete' ? 'complete' as const : 'building' as const
         universe.updateTile(tileId, { state: newState })
       }
+      // Auto-move agent to the file being edited
+      autoMoveAgentToWorkTarget(event, universe, agents, monsters)
       break
     }
 
@@ -459,57 +574,33 @@ function dispatchEvent(event: AgentEvent): void {
         }, RUINS_FADE_MS / currentPlaybackSpeed)
         tileRuinsTimers.set(tileId, ruinsTimer)
       }
+      // Auto-move agent to the file being deleted
+      autoMoveAgentToWorkTarget(event, universe, agents, monsters)
       break
     }
 
-    // ---- Agent movement ----
+    // ---- Agent movement (explicit move events from adapter) ----
     case 'move': {
       const buildingId = event.target?.building_id
       if (buildingId) {
         const building = universe.buildings.get(buildingId)
         if (building) {
-          // Check if there's an active monster at this building — offset agent to avoid overlap
-          let position = building.position
-          for (const m of monsters.monsters.values()) {
-            if (m.affected_building_id === buildingId && m.status !== 'defeated') {
-              position = { ...m.position, local_x: m.position.local_x - 2 }
-              break
-            }
-          }
+          // Use tile-local offset when available
+          const target = resolveWorkTarget(event, universe) ?? building.position
           agents.batchUpdate((agentMap) => {
             const agent = agentMap.get(event.agent_id)
-            if (agent) {
-              let finalPosition = position
-              const spiralOffsets: Array<[number, number]> = [
-                [0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1],
-                [2, 0], [0, 2], [-2, 0], [0, -2],
-              ]
-              const occupiedPositions = new Set<string>()
-              for (const [otherId, other] of agentMap) {
-                if (otherId === event.agent_id) continue
-                occupiedPositions.add(`${other.position.local_x},${other.position.local_y}`)
-              }
-              for (const [dx, dy] of spiralOffsets) {
-                const testPos = {
-                  ...position,
-                  local_x: position.local_x + dx,
-                  local_y: position.local_y + dy,
-                }
-                const key = `${testPos.local_x},${testPos.local_y}`
-                if (!occupiedPositions.has(key)) {
-                  finalPosition = testPos
-                  break
-                }
-              }
-              agentMap.set(event.agent_id, { ...agent, position: finalPosition, status: 'active' })
-            }
+            if (!agent) return
+
+            const occupied = collectOccupiedPositions(agentMap, monsters.monsters, event.agent_id)
+            const finalPosition = findNonOverlappingPosition(target, occupied)
+            agentMap.set(event.agent_id, { ...agent, position: finalPosition, status: 'active' })
           })
         }
       }
       break
     }
 
-    // ---- Tool use (FX only — no state change) ----
+    // ---- Tool use (FX + auto-move to target building) ----
     case 'tool_use': {
       const toolId = event.target?.tool_id
       if (toolId) {
@@ -524,6 +615,8 @@ function dispatchEvent(event: AgentEvent): void {
             agentMap.set(event.agent_id, { ...agent, active_tool: toolId, tools })
           }
         })
+        // Auto-move agent to the building being worked on (if target has building_id)
+        autoMoveAgentToWorkTarget(event, universe, agents, monsters)
         // Dedup: clear existing timer for this agent before scheduling new one
         const existingTimer = toolTimers.get(event.agent_id)
         if (existingTimer) clearTimeout(existingTimer)
@@ -557,27 +650,8 @@ function dispatchEvent(event: AgentEvent): void {
         const position =
           building?.position ?? firstBuilding?.position ?? { chunk_x: 0, chunk_y: 0, local_x: 20, local_y: 20 }
 
-        let finalPosition = position
-        const spiralOffsets: Array<[number, number]> = [
-          [0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1],
-          [2, 0], [0, 2], [-2, 0], [0, -2],
-        ]
-        const occupiedPositions = new Set<string>()
-        for (const existing of agentMap.values()) {
-          occupiedPositions.add(`${existing.position.local_x},${existing.position.local_y}`)
-        }
-        for (const [dx, dy] of spiralOffsets) {
-          const testPos = {
-            ...position,
-            local_x: position.local_x + dx,
-            local_y: position.local_y + dy,
-          }
-          const key = `${testPos.local_x},${testPos.local_y}`
-          if (!occupiedPositions.has(key)) {
-            finalPosition = testPos
-            break
-          }
-        }
+        const occupied = collectOccupiedPositions(agentMap, monsters.monsters)
+        const finalPosition = findNonOverlappingPosition(position, occupied)
 
         agentMap.set(newAgentId, {
           id: newAgentId,
@@ -723,74 +797,64 @@ function dispatchEvent(event: AgentEvent): void {
         }
         const jitter = Math.abs(idHash) % 3 // 0-2 tiles
 
-        // Resolve position near (but not on top of) the source entity
-        let monsterPos: WorldCoord | undefined
+        // Resolve anchor position near (but offset from) the source entity.
+        // Monster anchor is always offset +2 tiles from the reference so it
+        // spawns next to — but not on top of — agents and buildings.
+        let anchor: WorldCoord | undefined
 
-        // 1. Prefer agent position — offset +2 tiles in local_x
-        const agent = agents.agents.get(event.agent_id)
-        if (agent?.position) {
-          const offsetX = 2 + jitter
-          const rawX = agent.position.local_x + offsetX
-          monsterPos = {
-            chunk_x: agent.position.chunk_x + (rawX > 63 ? 1 : 0),
-            chunk_y: agent.position.chunk_y,
-            local_x: rawX > 63 ? rawX - 64 : rawX,
-            local_y: agent.position.local_y,
+        // 1. Prefer building position — offset by footprint width + 1
+        if (building?.position) {
+          anchor = {
+            ...building.position,
+            local_x: building.position.local_x + (building.footprint?.width ?? 1) + 1 + jitter,
           }
         }
 
-        // 2. Fall back to building position — offset by footprint width + 1
-        if (!monsterPos && building?.position) {
-          const offsetX = (building.footprint?.width ?? 1) + 1 + jitter
-          const rawX = building.position.local_x + offsetX
-          monsterPos = {
-            chunk_x: building.position.chunk_x + (rawX > 63 ? 1 : 0),
-            chunk_y: building.position.chunk_y,
-            local_x: rawX > 63 ? rawX - 64 : rawX,
-            local_y: building.position.local_y,
+        // 2. Fall back to agent position — offset +2 tiles
+        if (!anchor) {
+          const agent = agents.agents.get(event.agent_id)
+          if (agent?.position) {
+            anchor = {
+              ...agent.position,
+              local_x: agent.position.local_x + 2 + jitter,
+            }
           }
         }
 
-        // 3. Fall back to district position with offset
-        if (!monsterPos) {
+        // 3. Fall back to district position
+        if (!anchor) {
           const districtId = event.target?.district_id
           const district = districtId ? universe.districts.get(districtId) : undefined
           if (district?.position) {
-            const offsetX = 2 + jitter
-            const rawX = district.position.local_x + offsetX
-            monsterPos = {
-              chunk_x: district.position.chunk_x + (rawX > 63 ? 1 : 0),
-              chunk_y: district.position.chunk_y,
-              local_x: rawX > 63 ? rawX - 64 : rawX,
-              local_y: district.position.local_y,
+            anchor = {
+              ...district.position,
+              local_x: district.position.local_x + 2 + jitter,
             }
           }
         }
 
-        // 4. Last resort: use first building available with offset
-        if (!monsterPos) {
+        // 4. Last resort: first building with offset
+        if (!anchor) {
           const firstBuilding = universe.buildings.values().next().value as { position: WorldCoord; footprint?: { width: number } } | undefined
           if (firstBuilding?.position) {
-            const offsetX = (firstBuilding.footprint?.width ?? 1) + 1 + jitter
-            const rawX = firstBuilding.position.local_x + offsetX
-            monsterPos = {
-              chunk_x: firstBuilding.position.chunk_x + (rawX > 63 ? 1 : 0),
-              chunk_y: firstBuilding.position.chunk_y,
-              local_x: rawX > 63 ? rawX - 64 : rawX,
-              local_y: firstBuilding.position.local_y,
+            anchor = {
+              ...firstBuilding.position,
+              local_x: firstBuilding.position.local_x + (firstBuilding.footprint?.width ?? 1) + 1 + jitter,
             }
           }
         }
+
+        const fallbackAnchor: WorldCoord = anchor ?? { chunk_x: 0, chunk_y: 0, local_x: 2, local_y: 0 }
+
+        // Use collision-safe placement to guarantee no overlap with agents or other monsters
+        const occupied = collectOccupiedPositions(agents.agents, monsters.monsters)
+        const monsterPos = findNonOverlappingPosition(fallbackAnchor, occupied)
+
         monsters.spawnMonster({
           id: monsterId,
           planetId: event.planet_id,
           severity: (meta.severity as MonsterSeverity) ?? 'error',
-          position: monsterPos ?? {
-            chunk_x: 0,
-            chunk_y: 0,
-            local_x: 0,
-            local_y: 0,
-          },
+          position: monsterPos,
           buildingId,
           workitemId,
           message: meta.message ?? 'Unknown error',
@@ -849,13 +913,15 @@ function dispatchEvent(event: AgentEvent): void {
         const monster = monsters.monsters.get(monsterId)
         agents.batchUpdate((agentMap) => {
           const agent = agentMap.get(event.agent_id)
-          if (agent) {
-            // Move agent next to the monster (offset to the left) so they appear to be fighting
-            const position = monster
-              ? { ...monster.position, local_x: monster.position.local_x - 2 }
-              : agent.position
-            agentMap.set(event.agent_id, { ...agent, status: 'combat', position })
-          }
+          if (!agent) return
+
+          // Move agent next to the monster using collision-safe placement
+          const combatAnchor: WorldCoord = monster
+            ? { ...monster.position, local_x: monster.position.local_x - 2 }
+            : agent.position
+          const occupied = collectOccupiedPositions(agentMap, monsters.monsters, event.agent_id)
+          const finalPosition = findNonOverlappingPosition(combatAnchor, occupied)
+          agentMap.set(event.agent_id, { ...agent, status: 'combat', position: finalPosition })
         })
       }
       break

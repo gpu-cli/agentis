@@ -71,7 +71,8 @@
     "app",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    "../../packages/engine/src/types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules"

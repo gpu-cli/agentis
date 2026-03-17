@@ -11,8 +11,10 @@ interface GameCanvasProps {
 export function GameCanvas({ onRendererReady }: GameCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<WorldRenderer | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadPhase, setLoadPhase] = useState('Initializing...')
+  const [loadState, setLoadState] = useState({
+    loading: true,
+    phase: 'Initializing...',
+  })
 
   useEffect(() => {
     const container = containerRef.current
@@ -22,12 +24,10 @@ export function GameCanvas({ onRendererReady }: GameCanvasProps = {}) {
     let pendingRenderer: WorldRenderer | null = null
 
     const setup = async () => {
-      setLoadPhase('Preparing renderer...')
+      setLoadState({ loading: true, phase: 'Preparing renderer...' })
       useToolStore.getState().loadDefaults()
 
       if (destroyed) return
-
-      setLoadPhase('Generating sprites...')
 
       // Track pending renderer so cleanup can destroy it even before init completes
       pendingRenderer = new WorldRenderer()
@@ -51,18 +51,7 @@ export function GameCanvas({ onRendererReady }: GameCanvasProps = {}) {
       onRendererReady?.(pendingRenderer)
       pendingRenderer = null
 
-      const assets = AssetLoader.instance
-      setLoadPhase(
-        assets.usingRealAssets
-          ? 'Assets loaded!'
-          : 'Using placeholder sprites',
-      )
-
-      // Brief pause to show final phase message
-      await new Promise((r) => setTimeout(r, 200))
-      if (destroyed) return
-
-      setLoading(false)
+      setLoadState({ loading: false, phase: 'Ready' })
     }
 
     setup()
@@ -86,17 +75,17 @@ export function GameCanvas({ onRendererReady }: GameCanvasProps = {}) {
 
   return (
     <div ref={containerRef} className="w-full h-full bg-world-void relative cursor-grab">
-      {loading && (
+      {loadState.loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="text-center">
-            <p className="font-pixel text-green-400 text-lg mb-4">Multiverse</p>
+            <p className="font-pixel text-green-400 text-lg mb-4">Agentis</p>
             <div className="w-48 h-1.5 bg-gray-800 rounded-full overflow-hidden mb-3">
               <div
                 className="h-full bg-green-500 transition-all duration-300"
                 style={{ width: `${(AssetLoader.instance.loadProgress ?? 0) * 100}%` }}
               />
             </div>
-            <p className="text-gray-500 text-xs">{loadPhase}</p>
+            <p className="text-gray-500 text-xs">{loadState.phase}</p>
           </div>
         </div>
       )}

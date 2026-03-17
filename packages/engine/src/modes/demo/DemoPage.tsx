@@ -20,14 +20,22 @@ import {
 } from './demoScenarioLoader'
 import { useDemoLoader } from './useDemoLoader'
 import { DemoLoadingOverlay, DemoErrorBanner } from './DemoOverlays'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@multiverse/ui'
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@multiverse/ui'
 import { useMemo, useEffect } from 'react'
-
-function getSpeedOptions(totalEvents: number): number[] {
-  return totalEvents >= 1000
-    ? [1, 10, 25, 50, 100]
-    : [1, 5, 10, 25]
-}
+import { getSpeedOptions } from '../../utils/playback'
+import { ZoomTierIcon } from '../../components/ZoomTierIcon'
+import { PlaybackToolbar } from '../../components/PlaybackToolbar'
 
 export function DemoPage() {
   const zoomTier = useUIStore((s) => s.zoomTier)
@@ -47,7 +55,8 @@ export function DemoPage() {
   }, [speedOptions, engine.speed, engine.setSpeed])
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <TooltipProvider delayDuration={300}>
+      <div className="w-full h-full flex flex-col">
       {loadState.phase === 'loading' && (
         <DemoLoadingOverlay stage={loadState.stage} percent={loadState.percent} />
       )}
@@ -57,17 +66,22 @@ export function DemoPage() {
       )}
 
       {/* Toolbar */}
-      <header className="h-14 bg-gray-800 border-b border-gray-700 flex items-center px-4 gap-3 shrink-0">
-        {/* Back to mode selection */}
-        <button
-          onClick={resetMode}
-          className="text-gray-400 hover:text-white text-sm mr-1"
-          title="Back to mode selection"
-        >
-          ←
-        </button>
-
-        <h1 className="font-pixel text-xs text-green-400 mr-2">Multiverse</h1>
+      <header className="h-14 bg-surface-1 border-b border-border flex items-center px-4 gap-3 shrink-0">
+        {/* Home — back to mode selection */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={resetMode}
+              variant="nav"
+              size="sm"
+              className="mr-2 px-0"
+              aria-label="Back to home"
+            >
+              HOME
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="start">Back to home</TooltipContent>
+        </Tooltip>
 
         {/* Scenario picker */}
         <Select
@@ -77,16 +91,16 @@ export function DemoPage() {
         >
           <SelectTrigger
             size="sm"
-            className="w-52 bg-gray-700 border-gray-600 text-gray-200 text-xs disabled:opacity-50"
+            className="w-52 bg-muted border-input text-card-foreground text-xs disabled:opacity-50"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-gray-800 border-gray-600">
+          <SelectContent className="bg-card border-border">
             {DEMO_SCENARIO_NAMES.map((name) => (
               <SelectItem
                 key={name}
                 value={name}
-                className="text-gray-200 text-xs focus:bg-gray-700 focus:text-white"
+                className="text-card-foreground text-xs focus:bg-accent focus:text-accent-foreground"
               >
                 {DEMO_SCENARIOS[name].label}
               </SelectItem>
@@ -94,75 +108,16 @@ export function DemoPage() {
           </SelectContent>
         </Select>
 
-        {/* Playback controls + speed */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={engine.restart}
-            className="text-[10px] px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded"
-            title="Restart"
-          >
-            🔄
-          </button>
-          {engine.playbackState === 'playing' ? (
-            <button
-              onClick={engine.pause}
-              className="text-[10px] px-1.5 py-1 bg-yellow-700 hover:bg-yellow-600 rounded"
-            >
-              ⏸
-            </button>
-          ) : (
-            <button
-              onClick={engine.play}
-              disabled={engine.playbackState === 'complete'}
-              className="text-[10px] px-1.5 py-1 bg-green-700 hover:bg-green-600 rounded disabled:opacity-50"
-            >
-              ▶️
-            </button>
-          )}
-          {speedOptions.map((speed) => (
-            <button
-              key={speed}
-              onClick={() => engine.setSpeed(speed)}
-              className={`text-[10px] px-1.5 py-1 rounded ${
-                engine.speed === speed
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-              }`}
-            >
-              {speed}x
-            </button>
-          ))}
-        </div>
-
-        {/* Progress */}
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <div className="w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-500 transition-all duration-300"
-              style={{ width: `${engine.progress * 100}%` }}
-            />
-          </div>
-          <span className="font-mono text-[10px]">
-            {engine.currentEventIndex}/{engine.totalEvents}
-          </span>
-        </div>
+        <PlaybackToolbar engine={engine} speedOptions={speedOptions} />
 
         <div className="flex-1" />
 
-        <span className="text-xs text-orange-400 font-pixel">DEMO</span>
-
         {/* Zoom tier icon */}
-        <span className="text-sm text-gray-400 cursor-default" title={`Zoom level: ${zoomTier.charAt(0).toUpperCase() + zoomTier.slice(1)}`}>
-          {zoomTier === 'universe' || zoomTier === 'orbital' ? '🌍'
-            : zoomTier === 'island' ? '🏝️'
-            : zoomTier === 'district' ? '🏘️'
-            : zoomTier === 'street' ? '🏠'
-            : '🔍'}
-        </span>
+        <ZoomTierIcon zoomTier={zoomTier} />
       </header>
 
       {/* Main canvas area */}
-      <main className="flex-1 relative">
+      <main className="flex-1 min-h-0 relative overflow-hidden">
         <GameCanvas />
         <EventLog />
         <FollowBadge />
@@ -171,6 +126,7 @@ export function DemoPage() {
         <DistrictPanel />
         <MonsterPanel />
       </main>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }

@@ -190,6 +190,12 @@ export async function buildReplayPackage(
           // Hash tool result content using real crypto.subtle (deferred)
           const resultContent = typeof block.content === 'string' ? block.content : undefined
 
+          // For error results, capture a sanitized preview so the monster panel
+          // can show meaningful output instead of just the tool name
+          const errorPreview = (status === 'error' && resultContent)
+            ? scrubSecrets(resultContent.slice(0, 300))
+            : undefined
+
           pushEvent(events, actorSeq, {
             ts,
             actorId: pending?.actorId ?? actorId,
@@ -200,6 +206,7 @@ export async function buildReplayPackage(
             context: {
               // Placeholder hash — will be replaced below with real SHA-256
               resultHash: resultContent ? `pending:${resultContent.length}` : undefined,
+              ...(errorPreview ? { errorPreview } : {}),
             },
             correlationId: toolUseId ? `corr_${toolUseId}` : null,
             redacted: false,
@@ -298,6 +305,10 @@ export async function buildReplayPackage(
             const toolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : undefined
             const pending = toolUseId ? pendingTools.get(toolUseId) : undefined
             const status = block.is_error === true ? 'error' : 'ok'
+            const nestedContent = typeof block.content === 'string' ? block.content : undefined
+            const nestedErrorPreview = (status === 'error' && nestedContent)
+              ? scrubSecrets(nestedContent.slice(0, 300))
+              : undefined
 
             pushEvent(events, actorSeq, {
               ts,
@@ -306,7 +317,10 @@ export async function buildReplayPackage(
               action: status === 'error' ? 'failed' : 'completed',
               status,
               target: { kind: 'tool', id: toolUseId, name: pending?.toolName },
-              context: { resultHash: `pending:nested` },
+              context: {
+                resultHash: `pending:nested`,
+                ...(nestedErrorPreview ? { errorPreview: nestedErrorPreview } : {}),
+              },
               correlationId: toolUseId ? `corr_${toolUseId}` : null,
               redacted: false,
               rawRef: { path: item.fileName, line: item.line },

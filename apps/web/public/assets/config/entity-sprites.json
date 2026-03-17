@@ -43,11 +43,11 @@
 
   "events": {
     "error": {
-      "default":  "skull",
-      "warning":  "monster_bat",
-      "error":    "monster_slime",
-      "critical": "monster_spider",
-      "outage":   "monster_rat"
+      "default":  ["skull", "monster_skeleton", "monster_zombie"],
+      "warning":  ["monster_bat", "monster_ghost", "monster_slime"],
+      "error":    ["monster_slime", "monster_skeleton", "monster_zombie", "monster_bat"],
+      "critical": ["monster_spider", "monster_demon", "monster_golem", "monster_dragon"],
+      "outage":   ["monster_rat", "monster_boss_1", "monster_boss_2", "monster_dragon"]
     },
     "deployment": {
       "default": "shovel"

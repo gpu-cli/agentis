@@ -8,12 +8,26 @@ import {
   type DemoScenarioName,
 } from "@multiverse/engine/modes/demo/demoScenarioLoader";
 import { useDemoLoader } from "@multiverse/engine/modes/demo/useDemoLoader";
+import Link from "next/link";
 import {
   DemoLoadingOverlay,
   DemoErrorBanner,
 } from "@multiverse/engine/modes/demo/DemoOverlays";
+import { ZoomTierIcon } from "@multiverse/engine/components/ZoomTierIcon";
+import { PlaybackToolbar } from "@multiverse/engine/components/PlaybackToolbar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@multiverse/ui";
 
-const SPEED_OPTIONS = [1, 2, 5, 10];
+const speedOptions = [1, 2, 5, 10];
 
 /**
  * Minimal demo shell — renders GameCanvas with playback controls.
@@ -26,121 +40,68 @@ export default function DemoShell() {
     useDemoLoader();
 
   return (
-    <div className="w-full h-full flex flex-col">
-      {loadState.phase === "loading" && (
-        <DemoLoadingOverlay
-          stage={loadState.stage}
-          percent={loadState.percent}
-        />
-      )}
+    <TooltipProvider delayDuration={300}>
+      <div className="w-full h-full flex flex-col">
+        {loadState.phase === "loading" && (
+          <DemoLoadingOverlay
+            stage={loadState.stage}
+            percent={loadState.percent}
+          />
+        )}
 
-      {loadState.phase === "error" && (
-        <DemoErrorBanner message={loadState.message} onRetry={retry} />
-      )}
+        {loadState.phase === "error" && (
+          <DemoErrorBanner message={loadState.message} onRetry={retry} />
+        )}
 
-      <header className="h-14 bg-gray-800 border-b border-gray-700 flex items-center px-4 gap-3 shrink-0">
-        <h1 className="font-pixel text-xs text-green-400 mr-2">Multiverse</h1>
+        <header className="h-14 bg-surface-1 border-b border-border flex items-center px-4 gap-3 shrink-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                href="/"
+                className="font-pixel text-xs text-orange-400 hover:text-orange-300 transition-colors no-underline mr-2"
+                aria-label="Back to home"
+              >
+                HOME
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start">Back to home</TooltipContent>
+          </Tooltip>
 
-        <select
-          value={currentScenario}
-          onChange={(e) =>
-            switchScenario(e.target.value as DemoScenarioName)
-          }
-          disabled={loadState.phase === "loading"}
-          className="bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600 disabled:opacity-50"
-        >
-          {DEMO_SCENARIO_NAMES.map((name) => (
-            <option key={name} value={name}>
-              {DEMO_SCENARIOS[name].label}
-            </option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-1">
-          <button
-            onClick={engine.restart}
-            className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
-            title="Restart"
+          <Select
+            value={currentScenario}
+            onValueChange={(value) => switchScenario(value as DemoScenarioName)}
+            disabled={loadState.phase === "loading"}
           >
-            ⏮
-          </button>
-          {engine.playbackState === "playing" ? (
-            <button
-              onClick={engine.pause}
-              className="text-xs px-2 py-1 bg-yellow-700 hover:bg-yellow-600 rounded"
+            <SelectTrigger
+              size="sm"
+              className="w-52 bg-muted border-input text-card-foreground text-xs disabled:opacity-50"
             >
-              ⏸
-            </button>
-          ) : (
-            <button
-              onClick={engine.play}
-              disabled={engine.playbackState === "complete"}
-              className="text-xs px-2 py-1 bg-green-700 hover:bg-green-600 rounded disabled:opacity-50"
-            >
-              ▶️
-            </button>
-          )}
-          <button
-            onClick={engine.stepForward}
-            disabled={engine.playbackState === "complete"}
-            className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
-            title="Step Forward"
-          >
-            ⏭
-          </button>
-        </div>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              {DEMO_SCENARIO_NAMES.map((name) => (
+                <SelectItem
+                  key={name}
+                  value={name}
+                  className="text-card-foreground text-xs focus:bg-accent focus:text-accent-foreground"
+                >
+                  {DEMO_SCENARIOS[name].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <div className="flex items-center gap-1">
-          {SPEED_OPTIONS.map((speed) => (
-            <button
-              key={speed}
-              onClick={() => engine.setSpeed(speed)}
-              className={`text-[10px] px-1.5 py-0.5 rounded ${
-                engine.speed === speed
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-700 text-gray-400 hover:bg-gray-600"
-              }`}
-            >
-              {speed}x
-            </button>
-          ))}
-        </div>
+          <PlaybackToolbar engine={engine} speedOptions={speedOptions} />
 
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <div className="w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-500 transition-all duration-300"
-              style={{ width: `${engine.progress * 100}%` }}
-            />
-          </div>
-          <span className="font-mono text-[10px]">
-            {engine.currentEventIndex}/{engine.totalEvents}
-          </span>
-        </div>
+          <div className="flex-1" />
 
-        <div className="flex-1" />
+          <ZoomTierIcon zoomTier={zoomTier} />
+        </header>
 
-        <span className="text-xs text-gray-500 font-pixel">DEMO</span>
-
-        <span
-          className="text-sm text-gray-400 cursor-default"
-          title={zoomTier.charAt(0).toUpperCase() + zoomTier.slice(1)}
-        >
-          {zoomTier === "universe" || zoomTier === "orbital"
-            ? "🌍"
-            : zoomTier === "island"
-              ? "🏝️"
-              : zoomTier === "district"
-                ? "🏘️"
-                : zoomTier === "street"
-                  ? "🏠"
-                  : "🔍"}
-        </span>
-      </header>
-
-      <main className="flex-1 relative">
-        <GameCanvas />
-      </main>
-    </div>
+        <main className="flex-1 min-h-0 relative overflow-hidden">
+          <GameCanvas />
+        </main>
+      </div>
+    </TooltipProvider>
   );
 }

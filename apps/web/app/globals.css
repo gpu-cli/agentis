@@ -8,9 +8,56 @@
 /* ── Custom tokens ── */
 @theme {
   --font-pixel: var(--font-pixel, "Press Start 2P", monospace);
+
+  /* ── World (PixiJS canvas) ── */
   --color-world-void: #0a0a0f;
   --color-world-fog: #1a1a2e;
   --color-world-silhouette: #16213e;
+
+  /* ── Semantic surface tokens (ShadCN convention) ── */
+
+  /* Page base layer — matches Tailwind gray-950 (#030712) */
+  --color-background: #030712;
+  --color-foreground: oklch(0.93 0.005 260);        /* ~gray-100 — primary text */
+
+  /* Tiered surface system — subtle lifts from the deep black base */
+  --color-surface-1: oklch(0.15 0.01 262);          /* ~#111827 — toolbar/top-bar (≈gray-900) */
+  --color-surface-2: oklch(0.17 0.012 262);         /* ~#1a2035 — side panels, cards */
+  --color-surface-3: oklch(0.20 0.014 262);         /* ~#1f2937 — popovers, modals (≈gray-800) */
+
+  /* ShadCN-expected aliases (map to surface tiers) */
+  --color-card: var(--color-surface-2);
+  --color-card-foreground: oklch(0.93 0.005 260);
+
+  --color-popover: var(--color-surface-3);
+  --color-popover-foreground: oklch(0.93 0.005 260);
+
+  /* Interactive — brand accents */
+  --color-primary: oklch(0.72 0.19 155);            /* ~green-400 — primary brand */
+  --color-primary-foreground: oklch(0.16 0.01 155);
+
+  --color-secondary: oklch(0.65 0.17 250);          /* ~blue-400 — secondary accent */
+  --color-secondary-foreground: oklch(0.16 0.01 250);
+
+  /* Muted / subtle */
+  --color-muted: oklch(0.22 0.008 262);             /* ~gray-800 — muted interactive bg */
+  --color-muted-foreground: oklch(0.55 0.01 260);   /* ~gray-400/500 — subdued text */
+
+  /* Hover / accent */
+  --color-accent: oklch(0.25 0.01 262);             /* ~gray-750 — hover state bg */
+  --color-accent-foreground: oklch(0.95 0.005 260);
+
+  /* Destructive / warning */
+  --color-destructive: oklch(0.63 0.21 25);         /* ~red-500 */
+  --color-destructive-foreground: oklch(0.95 0.01 25);
+
+  --color-warning: oklch(0.70 0.17 85);             /* ~yellow-400 */
+  --color-warning-foreground: oklch(0.16 0.01 85);
+
+  /* Borders / inputs / rings */
+  --color-border: oklch(0.26 0.012 262);            /* dark blueish border (~gray-700/800) */
+  --color-input: oklch(0.22 0.01 262);              /* input border */
+  --color-ring: oklch(0.72 0.19 155);               /* focus ring — matches primary */
 }
 
 /* ── Base resets ── */
@@ -34,7 +81,7 @@
   *,
   *::before,
   *::after {
-    border-color: theme(--color-gray-200);
+    border-color: var(--color-border);
   }
 }
 
@@ -53,4 +100,12 @@
   height: 100% !important;
   image-rendering: pixelated;
   filter: saturate(0.92) contrast(0.95) brightness(0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

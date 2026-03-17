@@ -138,7 +138,7 @@ export function canUseSAB(): boolean {
       typeof SharedArrayBuffer !== 'undefined' &&
       typeof Atomics !== 'undefined' &&
       (typeof globalThis !== 'undefined'
-        ? !!(globalThis as any).crossOriginIsolated
+        ? !!(globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated
         : false)
     )
   } catch {
@@ -249,15 +249,15 @@ export class SABRingBuffer {
 // JSON encode/decode helpers for SAB messages
 // ---------------------------------------------------------------------------
 
-const te = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null as any
-const td = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null as any
+const te: TextEncoder | null = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null
+const td: TextDecoder | null = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null
 
 export function encodeJSON(obj: unknown): Uint8Array {
   const str = JSON.stringify(obj)
   return te ? te.encode(str) : new Uint8Array([])
 }
 
-export function decodeJSON(bytes: Uint8Array): any {
+export function decodeJSON(bytes: Uint8Array): unknown {
   const str = td ? td.decode(bytes) : ''
   try { return JSON.parse(str) } catch { return null }
 }

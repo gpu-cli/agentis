@@ -412,9 +412,33 @@ function buildSnapshotFromReplay(input: UniversalEventsPackage): PlanetSnapshot 
 function buildAgentEventsFromReplay(input: UniversalEventsPackage): AgentEvent[] {
   const perActorSeq = new Map<string, number>()
 
+  // Build event→severity lookup from issues for error_spawn diversity
+  const eventSeverityMap = new Map<string, string>()
+  if (input.issues) {
+    for (const issue of input.issues) {
+      for (const eventId of issue.linkedEventIds) {
+        eventSeverityMap.set(eventId, issue.severity)
+      }
+    }
+  }
+  const VALID_SEVERITIES = ['warning', 'error', 'critical', 'outage']
+
   return input.events.map((event, index) => {
     const seq = (perActorSeq.get(event.actorId) ?? 0) + 1
     perActorSeq.set(event.actorId, seq)
+
+    const eventType = toAgentEventType(event)
+
+    // Resolve severity for error events: prefer issue-linked, fall back to
+    // deterministic hash-based selection for visual variety
+    const issueSeverity = eventSeverityMap.get(event.id)
+    let severity: string
+    if (issueSeverity && VALID_SEVERITIES.includes(issueSeverity)) {
+      severity = issueSeverity
+    } else {
+      const SEVERITY_POOL = ['warning', 'error', 'error', 'critical'] as const
+      severity = SEVERITY_POOL[Math.abs(simpleHash(event.id)) % SEVERITY_POOL.length]!
+    }
 
     return {
       id: event.id,
@@ -425,7 +449,7 @@ function buildAgentEventsFromReplay(input: UniversalEventsPackage): AgentEvent[]
       seq,
       timestamp: Date.parse(event.ts) || index,
       kind: event.status === 'error' ? 'fx' : 'mutation',
-      type: toAgentEventType(event),
+      type: eventType,
       source: 'agent_runtime',
       target: {
         building_id: event.target?.kind === 'artifact' ? event.target.id : undefined,
@@ -437,6 +461,9 @@ function buildAgentEventsFromReplay(input: UniversalEventsPackage): AgentEvent[]
         category: event.category,
         action: event.action,
         status: event.status,
+        // Propagate severity for error_spawn events so monster rendering
+        // can use deterministic variant selection
+        ...(eventType === 'error_spawn' ? { severity } : {}),
       },
     }
   })

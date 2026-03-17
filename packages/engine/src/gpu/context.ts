@@ -9,10 +9,11 @@ import type { GpuContext } from './types'
  * Caller owns the device and must call destroy() when done.
  */
 export async function createGpuContext(): Promise<GpuContext | null> {
-  if (typeof navigator === 'undefined' || !('gpu' in navigator)) return null
+  if (typeof navigator === 'undefined') return null
+  if (!('gpu' in navigator)) return null
 
   try {
-    const gpu = (navigator as any).gpu as GPU
+    const gpu = navigator.gpu as GPU
     const adapter = await gpu.requestAdapter({
       powerPreference: 'low-power', // prefer integrated GPU
     })

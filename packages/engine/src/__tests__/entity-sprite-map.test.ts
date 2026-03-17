@@ -97,7 +97,7 @@ describe('EntitySpriteMap', () => {
   // -----------------------------------------------------------------------
 
   describe('resolveEvent', () => {
-    it('resolves event categories to default sprite', () => {
+    it('resolves event categories to default sprite (first from array)', () => {
       expect(map.resolveEvent('error')).toBe('skull')
       expect(map.resolveEvent('deployment')).toBe('shovel')
       expect(map.resolveEvent('file_change')).toBe('saw')
@@ -106,7 +106,7 @@ describe('EntitySpriteMap', () => {
       expect(map.resolveEvent('combat')).toBe('monster_boss_1')
     })
 
-    it('resolves error severity levels', () => {
+    it('resolves error severity levels to first variant', () => {
       expect(map.resolveEvent('error', 'warning')).toBe('monster_bat')
       expect(map.resolveEvent('error', 'error')).toBe('monster_slime')
       expect(map.resolveEvent('error', 'critical')).toBe('monster_spider')
@@ -119,6 +119,78 @@ describe('EntitySpriteMap', () => {
 
     it('falls back to skull for unknown categories', () => {
       expect(map.resolveEvent('unknown_category')).toBe('skull')
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // Event Variant Resolution (deterministic-random)
+  // -----------------------------------------------------------------------
+
+  describe('resolveEventVariant', () => {
+    it('returns deterministic sprite for the same event ID', () => {
+      const key1 = map.resolveEventVariant('error', 'error', 'evt-001')
+      const key2 = map.resolveEventVariant('error', 'error', 'evt-001')
+      expect(key1).toBe(key2)
+    })
+
+    it('different event IDs distribute across variant pool', () => {
+      const keys = new Set<string>()
+      for (let i = 0; i < 100; i++) {
+        keys.add(map.resolveEventVariant('error', 'error', `evt-${i}`))
+      }
+      // error severity has 4 variants — should use at least 2
+      expect(keys.size).toBeGreaterThanOrEqual(2)
+    })
+
+    it('uses all variants in the pool with enough IDs', () => {
+      const distribution = new Map<string, number>()
+      for (let i = 0; i < 500; i++) {
+        const key = map.resolveEventVariant('error', 'error', `monster-${i}`)
+        distribution.set(key, (distribution.get(key) ?? 0) + 1)
+      }
+      // error severity pool: ['monster_slime', 'monster_skeleton', 'monster_zombie', 'monster_bat']
+      expect(distribution.size).toBe(4)
+    })
+
+    it('critical severity uses its own variant pool', () => {
+      const keys = new Set<string>()
+      for (let i = 0; i < 200; i++) {
+        keys.add(map.resolveEventVariant('error', 'critical', `crit-${i}`))
+      }
+      // critical pool: ['monster_spider', 'monster_demon', 'monster_golem', 'monster_dragon']
+      expect(keys.size).toBe(4)
+      expect(keys).toContain('monster_spider')
+      expect(keys).toContain('monster_demon')
+    })
+
+    it('falls back to default pool when severity not found', () => {
+      const key = map.resolveEventVariant('error', 'unknown_sev', 'evt-x')
+      // default pool: ['skull', 'monster_skeleton', 'monster_zombie']
+      expect(['skull', 'monster_skeleton', 'monster_zombie']).toContain(key)
+    })
+
+    it('works with non-array event configs (string passthrough)', () => {
+      const key = map.resolveEventVariant('deployment', undefined, 'deploy-1')
+      expect(key).toBe('shovel')
+    })
+
+    it('falls back gracefully without eventId', () => {
+      const key = map.resolveEventVariant('error', 'error')
+      expect(key).toBe('monster_slime') // first element of error pool
+    })
+
+    it('falls back to skull for unknown categories', () => {
+      const key = map.resolveEventVariant('unknown', undefined, 'evt-1')
+      expect(key).toBe('skull')
+    })
+
+    it('same event ID always produces same sprite across fresh instances', () => {
+      const results = new Set<string>()
+      for (let i = 0; i < 50; i++) {
+        const freshMap = new EntitySpriteMap()
+        results.add(freshMap.resolveEventVariant('error', 'error', 'stable-event-id'))
+      }
+      expect(results.size).toBe(1)
     })
   })
 
@@ -144,11 +216,15 @@ describe('EntitySpriteMap', () => {
       expect(toolMap['tool_code_edit']).toBe('shield_town')
     })
 
-    it('getEventMap returns all configured events', () => {
+    it('getEventMap returns all configured events (flattened to first variant)', () => {
       const eventMap = map.getEventMap()
       expect(Object.keys(eventMap)).toContain('error')
       expect(Object.keys(eventMap)).toContain('deployment')
+      // Array values are flattened to their first element
       expect(eventMap['error']!['critical']).toBe('monster_spider')
+      expect(eventMap['error']!['default']).toBe('skull')
+      // Non-array values stay as-is
+      expect(eventMap['deployment']!['default']).toBe('shovel')
     })
 
     it('getAgentTypeMap returns base sprite for each agent type', () => {
@@ -171,13 +247,23 @@ describe('EntitySpriteMap', () => {
       expect(keys).toContain('npc_assassin')
     })
 
-    it('getMonsterSpriteMap returns severity → region key mapping', () => {
+    it('getMonsterSpriteMap returns all error variant region keys', () => {
       const monsterMap = map.getMonsterSpriteMap()
+      // Now collects ALL variants from array pools
       expect(monsterMap['bat']).toBe('monster_bat')
       expect(monsterMap['slime']).toBe('monster_slime')
       expect(monsterMap['spider']).toBe('monster_spider')
       expect(monsterMap['rat']).toBe('monster_rat')
-      expect(Object.keys(monsterMap).length).toBe(4)
+      expect(monsterMap['skeleton']).toBe('monster_skeleton')
+      expect(monsterMap['zombie']).toBe('monster_zombie')
+      expect(monsterMap['ghost']).toBe('monster_ghost')
+      expect(monsterMap['demon']).toBe('monster_demon')
+      expect(monsterMap['golem']).toBe('monster_golem')
+      expect(monsterMap['dragon']).toBe('monster_dragon')
+      expect(monsterMap['boss_1']).toBe('monster_boss_1')
+      expect(monsterMap['boss_2']).toBe('monster_boss_2')
+      // All monster_ prefixed variants should be present
+      expect(Object.keys(monsterMap).length).toBeGreaterThanOrEqual(12)
     })
   })
 
@@ -231,6 +317,41 @@ describe('EntitySpriteMap', () => {
       // With 3 variants and 300 IDs, each should get roughly 100
       // We just check that all 3 variants are used
       expect(distribution.size).toBe(3)
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // Panel ↔ World Sprite Consistency
+  // -----------------------------------------------------------------------
+
+  describe('panel-world sprite consistency', () => {
+    it('resolveEventVariant returns same key regardless of caller (panel vs world)', () => {
+      // Simulate: MonsterManager calls resolveEventVariant('error', severity, id)
+      // MonsterPanel must call the same thing to get the matching icon.
+      // This test proves a single call path produces identical results.
+      const severities = ['warning', 'error', 'critical', 'outage']
+      for (const severity of severities) {
+        for (let i = 0; i < 50; i++) {
+          const monsterId = `monster_synth_${i}`
+          const worldKey = map.resolveEventVariant('error', severity, monsterId)
+          const panelKey = map.resolveEventVariant('error', severity, monsterId)
+          expect(panelKey).toBe(worldKey)
+        }
+      }
+    })
+
+    it('resolveEventVariant differs from resolveEvent for varied IDs', () => {
+      // resolveEvent always returns the first variant (no ID hashing)
+      // resolveEventVariant with different IDs should produce variety
+      const defaultKey = map.resolveEvent('error', 'error')
+      const variantKeys = new Set<string>()
+      for (let i = 0; i < 100; i++) {
+        variantKeys.add(map.resolveEventVariant('error', 'error', `monster_${i}`))
+      }
+      // The variant set should contain more than just the default
+      expect(variantKeys.size).toBeGreaterThan(1)
+      // The default key should be one of the possible variants
+      expect(variantKeys).toContain(defaultKey)
     })
   })
 })

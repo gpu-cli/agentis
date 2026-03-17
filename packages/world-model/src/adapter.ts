@@ -830,8 +830,16 @@ function toOperationEvents(
 
     // Tool errors spawn a monster. The monster appears with full health, its
     // health bar auto-drains in the event store, and then it fades out.
+    // Severity is deterministically varied by hashing the operation ID so
+    // different errors get visually distinct monsters across replays.
     if (op.isError) {
       const monsterId = `monster_${op.id}`
+      const SEVERITIES = ['warning', 'error', 'error', 'critical'] as const
+      let opHash = 0
+      for (let c = 0; c < op.id.length; c++) {
+        opHash = ((opHash << 5) - opHash + op.id.charCodeAt(c)) | 0
+      }
+      const severity = SEVERITIES[Math.abs(opHash) % SEVERITIES.length]!
       events.push({
         id: `evt_${seq++}`,
         schema_version: 1,
@@ -852,7 +860,7 @@ function toOperationEvents(
           } : {}),
         },
         metadata: {
-          severity: 'error',
+          severity,
           message: op.summary ?? 'Tool failed',
           tool_name: op.toolName,
         },

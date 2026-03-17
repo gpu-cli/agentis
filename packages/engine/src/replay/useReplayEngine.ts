@@ -61,7 +61,7 @@ export function useReplayEngine() {
   const genRef = useRef(0)
 
   const isV4Replay = typeof window !== 'undefined'
-    ? (window as any).__MV_V4_REPLAY__ ?? (window as any).__NEXT_PUBLIC_V4_REPLAY__ ?? true
+    ? window.__MV_V4_REPLAY__ ?? window.__NEXT_PUBLIC_V4_REPLAY__ ?? true
     : false
 
   /** Stop playback loop and clear all queued replay work. */
@@ -202,8 +202,12 @@ export function useReplayEngine() {
                     let frame: Uint8Array | null
                     // Drain all available frames for this animation frame
                     while ((frame = ring.read()) !== null) {
-                      const msg = decodeJSON(frame!) as { type: string; payload: any }
-                      if (msg && msg.type === 'diff' && msg.payload) {
+                      const decoded = decodeJSON(frame)
+                      if (typeof decoded === 'object' && decoded !== null && 'type' in decoded) {
+                        const msg = decoded as { type?: unknown; payload?: unknown }
+                        if (msg.type !== 'diff' || !msg.payload) {
+                          continue
+                        }
                         const payload = msg.payload as { changes?: DiffChange[]; events?: import('@multiverse/shared').AgentEvent[]; progress?: { current: number; total: number } }
                         if (payload.changes && payload.changes.length > 0) {
                           coalescerRef.current.addAll(payload.changes)
@@ -341,7 +345,7 @@ export function useReplayEngine() {
       workerRef.current?.postMessage({ type: 'restart' })
       // Re-send snapshot so worker re-initializes SoA state
       if (workerRef.current) sendSnapshotToWorker(workerRef.current)
-      setState((s) => ({ ...s, playbackState: 'idle', currentEventIndex: 0, progress: 0 }))
+      setState((s) => ({ ...s, playbackState: 'paused', currentEventIndex: 0, progress: 0 }))
     } else {
       engineRef.current?.restart()
     }

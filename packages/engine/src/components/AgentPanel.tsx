@@ -11,16 +11,16 @@ import { SpriteIcon, resolveToolIcon } from './SpriteIcon'
 import { ResizableSidePanel } from './ResizableSidePanel'
 import { AgentChatPanel } from './AgentChatPanel'
 import { AgentTypeLogo, AGENT_TYPE_META } from './AgentTypeLogo'
-import { ScrollArea } from '@multiverse/ui'
+import { Button, ScrollArea } from '@multiverse/ui'
 
 /** Wrap filename-like tokens in a description string with <code> tags */
 function formatDescription(text: string): React.ReactNode {
   // Match tokens that look like filenames (word chars/hyphens + dot + extension)
   const parts = text.split(/(\S+\.\w{1,10})/)
   if (parts.length === 1) return text
-  return parts.map((part, i) =>
+  return parts.map((part) =>
     /^\S+\.\w{1,10}$/.test(part)
-      ? <code key={i} className="bg-gray-600/50 px-1 rounded text-gray-200">{part}</code>
+      ? <code key={part} className="bg-muted/50 px-1 rounded text-card-foreground">{part}</code>
       : part
   )
 }
@@ -48,14 +48,21 @@ export { AgentTypeLogo, AGENT_TYPE_META } from './AgentTypeLogo'
 
 const CHUNK_SIZE = 64
 
-/** Resolve an agent's position to a meaningful location string */
-function resolveLocation(agentId: string): string {
-  const agent = useAgentStore.getState().agents.get(agentId)
-  if (!agent) return 'Unknown'
+type AgentsMap = ReturnType<typeof useAgentStore.getState>['agents']
+type IslandsMap = ReturnType<typeof useUniverseStore.getState>['islands']
+type DistrictsMap = ReturnType<typeof useUniverseStore.getState>['districts']
+type BuildingsMap = ReturnType<typeof useUniverseStore.getState>['buildings']
 
-  const islands = useUniverseStore.getState().islands
-  const districts = useUniverseStore.getState().districts
-  const buildings = useUniverseStore.getState().buildings
+/** Resolve an agent's position to a meaningful location string */
+function resolveLocation(
+  agentId: string,
+  agents: AgentsMap,
+  islands: IslandsMap,
+  districts: DistrictsMap,
+  buildings: BuildingsMap,
+): string {
+  const agent = agents.get(agentId)
+  if (!agent) return 'Unknown'
 
   // Agent tile position (not pixel — tile coordinates)
   const ax = agent.position.chunk_x * CHUNK_SIZE + agent.position.local_x
@@ -119,6 +126,9 @@ export function AgentPanel() {
   const setConversationAgent = useUIStore((s) => s.setConversationAgent)
   const conversationAgentId = useUIStore((s) => s.conversationAgentId)
   const agents = useAgentStore((s) => s.agents)
+  const islands = useUniverseStore((s) => s.islands)
+  const districts = useUniverseStore((s) => s.districts)
+  const buildings = useUniverseStore((s) => s.buildings)
   const spriteAssignment = useAgentStore((s) => s.spriteAssignment)
   const getAgentEvents = useEventStore((s) => s.getAgentEvents)
 
@@ -131,7 +141,7 @@ export function AgentPanel() {
   const isFollowing = followAgentId === agent.id
   const isTalking = conversationAgentId === agent.id
   const typeMeta = AGENT_TYPE_META[agent.type]
-  const location = resolveLocation(agent.id)
+  const location = resolveLocation(agent.id, agents, islands, districts, buildings)
 
   return (
     <ResizableSidePanel>
@@ -141,7 +151,7 @@ export function AgentPanel() {
           <AgentChatPanel agentId={agent.id} />
         </div>
       ) : (
-        <div className="p-4 h-full max-h-screen flex flex-col">
+        <div className="p-4 flex flex-col">
           {/* Header — name + status orb + type logo + close */}
           <div className="flex items-center gap-2 mb-5">
             <h2 className="font-pixel text-sm text-green-400 flex-1 min-w-0 truncate">
@@ -156,64 +166,70 @@ export function AgentPanel() {
             <div className="group relative shrink-0">
               <AgentTypeLogo type={agent.type} size={20} />
               <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <div className="bg-gray-900 text-gray-100 text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap border border-gray-600">
+                <div className="bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap border border-border">
                   {typeMeta?.label ?? agent.type}
                 </div>
-                <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[4px] border-l-transparent border-r-transparent border-b-gray-900 mx-auto rotate-180 -mt-[5px]" />
+                <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[4px] border-l-transparent border-r-transparent border-b-popover mx-auto rotate-180 -mt-[5px]" />
               </div>
             </div>
             {/* Close button */}
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={clearSelection}
-              className="text-gray-500 hover:text-white text-lg shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-gray-700 transition-colors"
+              className="h-7 w-7 shrink-0 text-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               aria-label="Close panel"
             >
               ✕
-            </button>
+            </Button>
           </div>
 
           {/* Current Task */}
           {agent.current_task && (
-            <div className="mb-4 bg-gray-700/60 rounded-lg px-3 py-2">
-              <span className="text-[10px] uppercase tracking-wider text-gray-500">Current Task</span>
+            <div className="mb-4 bg-muted/60 rounded-lg px-3 py-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Current Task</span>
               <p className="text-sm text-blue-300 mt-0.5">{agent.current_task.title}</p>
             </div>
           )}
 
           {/* Key Actions — Follow + Talk side by side */}
           <div className="flex gap-2 mb-4">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() =>
                 isFollowing
                   ? setFollowAgent(null)
                   : setFollowAgent(agent.id)
               }
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:outline-none ${
+              className={`h-auto flex-1 gap-1.5 px-3 py-2 text-xs font-medium focus-visible:ring-2 focus-visible:ring-green-500 ${
                 isFollowing
                   ? 'bg-green-700 text-green-100 hover:bg-green-600'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  : 'bg-muted text-card-foreground hover:bg-accent'
               }`}
               aria-label={isFollowing ? 'Stop following agent' : 'Follow agent camera'}
             >
               <SpriteIcon region="chains" size={18} className="shrink-0" />
               <span className="font-pixel leading-none">{isFollowing ? 'Following' : 'Follow'}</span>
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setConversationAgent(agent.id)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none bg-gray-700 text-gray-300 hover:bg-gray-600"
+              className="h-auto flex-1 gap-1.5 bg-muted px-3 py-2 text-xs font-medium text-card-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-blue-500"
               aria-label="Chat with agent"
             >
               <SpriteIcon region={spriteAssignment.get(agent.id) ?? 'hero_knight'} size={18} className="shrink-0" />
               <span className="font-pixel leading-none">Chat</span>
-            </button>
+            </Button>
           </div>
 
           {/* Divider */}
-          <div className="border-t border-gray-700 mb-4" />
+          <div className="border-t border-border mb-4" />
 
           {/* Tools */}
           <div className="mb-4">
-            <span className="text-[10px] uppercase tracking-wider text-gray-500 mb-2 block">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 block">
               Tools
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -229,7 +245,7 @@ export function AgentPanel() {
                       className={`group relative inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
                         isActive
                           ? 'bg-yellow-600/30 ring-1 ring-yellow-500 text-yellow-200'
-                          : 'bg-gray-700/80 text-gray-300 hover:bg-gray-600'
+                          : 'bg-muted/80 text-card-foreground hover:bg-accent'
                       }`}
                     >
                       <SpriteIcon region={resolveToolIcon(tool.tool_id)} size={14} className="shrink-0" />
@@ -246,24 +262,24 @@ export function AgentPanel() {
           </div>
 
           {/* Divider */}
-          <div className="border-t border-gray-700 mb-4" />
+          <div className="border-t border-border mb-4" />
 
           {/* Location — meaningful breadcrumb */}
           <div className="mb-4">
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">Location</span>
-            <p className="text-xs text-gray-300 mt-0.5">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Location</span>
+            <p className="text-xs text-card-foreground mt-0.5">
               📍 {location}
             </p>
           </div>
 
           {/* Action Log */}
           <ScrollArea>
-            <span className="text-[10px] uppercase tracking-wider text-gray-500 mb-2 block">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 block">
               Recent Actions
             </span>
             <div className="space-y-1">
               {recentEvents.length === 0 && (
-                <p className="text-xs text-gray-600 italic">No events yet</p>
+                <p className="text-xs text-muted-foreground/60 italic">No events yet</p>
               )}
               {recentEvents.map((log) => {
                 const description = describeEvent(log.event)
@@ -273,13 +289,13 @@ export function AgentPanel() {
                 return (
                   <div
                     key={log.event.id}
-                    className="text-xs bg-gray-700/50 rounded px-2.5 py-1.5 flex items-start gap-1.5"
+                    className="text-xs bg-muted/50 rounded px-2.5 py-1.5 flex items-start gap-1.5"
                   >
                     <span className="shrink-0 mt-0.5">{icon}</span>
                     <div className="min-w-0 flex-1">
-                      <span className="text-gray-300">{formatDescription(description)}</span>
+                      <span className="text-card-foreground">{formatDescription(description)}</span>
                       {toolDetail && (
-                        <p className="text-[9px] text-gray-400 font-mono leading-tight truncate mt-0.5">
+                        <p className="text-[9px] text-muted-foreground font-mono leading-tight truncate mt-0.5">
                           {toolDetail}
                         </p>
                       )}
@@ -299,5 +315,3 @@ export function AgentPanel() {
     </ResizableSidePanel>
   )
 }
-
-

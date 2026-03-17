@@ -113,9 +113,37 @@ function buildEvents(input: UniversalEventsPackage): AgentEvent[] {
   const planetId = input.topology.world.id
   const perActorSeq = new Map<string, number>()
 
+  // Build event→severity lookup from issues for error_spawn diversity
+  const eventSeverityMap = new Map<string, string>()
+  if (input.issues) {
+    for (const issue of input.issues) {
+      for (const eventId of issue.linkedEventIds) {
+        eventSeverityMap.set(eventId, issue.severity)
+      }
+    }
+  }
+  const VALID_SEVERITIES = ['warning', 'error', 'critical', 'outage']
+
   return input.events.map((event, index) => {
     const seq = (perActorSeq.get(event.actorId) ?? 0) + 1
     perActorSeq.set(event.actorId, seq)
+
+    const eventType = toAgentEventType(event)
+
+    // Resolve severity for error events: prefer issue-linked, fall back to
+    // deterministic hash-based selection for visual variety
+    const issueSeverity = eventSeverityMap.get(event.id)
+    let severity: string
+    if (issueSeverity && VALID_SEVERITIES.includes(issueSeverity)) {
+      severity = issueSeverity
+    } else {
+      const SEVERITY_POOL = ['warning', 'error', 'error', 'critical'] as const
+      let h = 0
+      for (let c = 0; c < event.id.length; c++) {
+        h = ((h << 5) - h + event.id.charCodeAt(c)) | 0
+      }
+      severity = SEVERITY_POOL[Math.abs(h) % SEVERITY_POOL.length]!
+    }
 
     return {
       id: event.id,
@@ -126,7 +154,7 @@ function buildEvents(input: UniversalEventsPackage): AgentEvent[] {
       seq,
       timestamp: Date.parse(event.ts) || index,
       kind: event.status === 'error' ? 'fx' : 'mutation',
-      type: toAgentEventType(event),
+      type: eventType,
       source: 'agent_runtime',
       target: {
         building_id: event.target?.kind === 'artifact' ? event.target.id : undefined,
@@ -141,6 +169,7 @@ function buildEvents(input: UniversalEventsPackage): AgentEvent[] {
         action: event.action,
         status: event.status,
         correlationId: event.correlationId,
+        ...(eventType === 'error_spawn' ? { severity } : {}),
       },
     }
   })

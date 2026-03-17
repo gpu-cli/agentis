@@ -1,4 +1,11 @@
 import { useRef, useState, type ChangeEventHandler } from 'react'
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@multiverse/ui'
 
 interface ReplayImportProps {
   onImportJson: (jsonText: string) => void
@@ -26,53 +33,71 @@ export function ReplayImport({ onImportJson, errorMessage }: ReplayImportProps) 
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/json,.json"
-        className="hidden"
-        onChange={onFileSelected}
-      />
-      <button
-        onClick={triggerFilePicker}
-        className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
-        title="Upload replay package"
-      >
-        Import JSON
-      </button>
-      <button
-        onClick={() => setShowPaste((open) => !open)}
-        className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
-        title="Paste replay JSON"
-      >
-        Paste
-      </button>
-
-      {showPaste ? (
-        <div className="absolute top-16 right-4 z-50 w-[440px] bg-gray-900 border border-gray-700 rounded p-3 shadow-lg">
-          <div className="text-[11px] text-gray-400 mb-2">Paste universal-events JSON</div>
-          <textarea
-            value={jsonText}
-            onChange={(event) => setJsonText(event.target.value)}
-            className="w-full h-36 bg-gray-950 text-gray-200 text-[11px] font-mono p-2 rounded border border-gray-700"
-            placeholder='{"schema":"universal-events", ...}'
-          />
-          <div className="mt-2 flex justify-between items-center">
-            {errorMessage ? (
-              <span className="text-[10px] text-red-400">{errorMessage}</span>
-            ) : (
-              <span className="text-[10px] text-gray-500">Ready to import</span>
-            )}
-            <button
-              onClick={() => onImportJson(jsonText)}
-              className="text-xs px-2 py-1 bg-green-700 hover:bg-green-600 rounded"
+    <TooltipProvider delayDuration={300}>
+      <div className="flex items-center gap-1">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={onFileSelected}
+        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={triggerFilePicker}
+              className="h-7 bg-muted px-2 text-xs hover:bg-accent"
+              aria-label="Upload replay package"
             >
-              Load Replay
-            </button>
+              Import JSON
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Upload replay package</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPaste((open) => !open)}
+              className="h-7 bg-muted px-2 text-xs hover:bg-accent"
+              aria-label="Paste replay JSON"
+            >
+              Paste
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Paste replay JSON</TooltipContent>
+        </Tooltip>
+
+        {showPaste ? (
+          <div className="absolute top-16 right-4 z-50 w-[440px] bg-card border border-border rounded p-3 shadow-lg">
+            <div className="text-[11px] text-muted-foreground mb-2">Paste universal-events JSON</div>
+            <textarea
+              value={jsonText}
+              onChange={(event) => setJsonText(event.target.value)}
+              className="w-full h-36 bg-background text-card-foreground text-[11px] font-mono p-2 rounded border border-input"
+              placeholder='{"schema":"universal-events", ...}'
+            />
+            <div className="mt-2 flex justify-between items-center">
+              {errorMessage ? (
+                <span className="text-[10px] text-red-400">{errorMessage}</span>
+              ) : (
+                <span className="text-[10px] text-muted-foreground">Ready to import</span>
+              )}
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => onImportJson(jsonText)}
+                className="h-7 bg-green-700 px-2 text-xs hover:bg-green-600"
+              >
+                Load Replay
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </TooltipProvider>
   )
 }

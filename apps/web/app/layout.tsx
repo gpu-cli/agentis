@@ -11,7 +11,7 @@ const pixelFont = Press_Start_2P({
 });
 
 export const metadata: Metadata = {
-  title: "Multiverse",
+  title: "Agentis",
   description: "PixiJS game visualizing code repositories as pixel-art worlds",
 };
 
@@ -21,8 +21,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={pixelFont.variable}>
-      <body className="bg-gray-900 text-white overflow-hidden">{children}</body>
+    <html lang="en" className={`${pixelFont.variable} dark`} style={{ colorScheme: "dark" }}>
+      <head>
+        <meta name="theme-color" content="#030712" />
+      </head>
+      <body className="bg-background text-foreground overflow-hidden">{children}</body>
     </html>
   );
 }

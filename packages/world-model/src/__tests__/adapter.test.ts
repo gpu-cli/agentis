@@ -401,7 +401,9 @@ describe('file_delete event generation', () => {
     const errorSpawn = scenario.events.filter(e => e.type === 'error_spawn')
     expect(errorSpawn.length).toBe(1)
     expect(errorSpawn[0]!.target?.monster_id).toBe('monster_op_1')
-    expect((errorSpawn[0]!.metadata as Record<string, unknown>).severity).toBe('error')
+    // Severity is now deterministically derived from the operation ID hash
+    const validSeverities = ['warning', 'error', 'critical']
+    expect(validSeverities).toContain((errorSpawn[0]!.metadata as Record<string, unknown>).severity)
     expect((errorSpawn[0]!.metadata as Record<string, unknown>).message).toBe('docker logs')
     expect((errorSpawn[0]!.metadata as Record<string, unknown>).tool_name).toBe('Bash')
 

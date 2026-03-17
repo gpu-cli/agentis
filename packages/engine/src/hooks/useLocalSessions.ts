@@ -22,23 +22,36 @@ export interface UseLocalSessionsResult {
   refresh: () => void
 }
 
+export interface UseLocalSessionsOptions {
+  /**
+   * Whether to enable fetching. When false, the hook immediately returns
+   * empty sessions with isLocalAvailable=false — no network request is made.
+   * Defaults to true.
+   */
+  enabled?: boolean
+}
+
 /**
  * Fetch auto-discovered Claude Code sessions from the local API.
  *
  * Behavior:
- * - On mount: fetches /api/local/sessions
+ * - On mount: fetches /api/local/sessions (unless enabled=false)
  * - On window focus: re-fetches (picks up new sessions)
  * - If fetch fails (403, network error): silently returns empty — no error flash
  * - If fetch succeeds with empty array: isLocalAvailable=true, sessions=[]
  */
-export function useLocalSessions(): UseLocalSessionsResult {
+export function useLocalSessions(options?: UseLocalSessionsOptions): UseLocalSessionsResult {
+  const enabled = options?.enabled ?? true
+
   const [sessions, setSessions] = useState<LocalSessionSummary[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(enabled)
   const [isLocalAvailable, setIsLocalAvailable] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const fetchSessions = useCallback(async () => {
+    if (!enabled) return
+
     // Abort any in-flight request
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -77,20 +90,22 @@ export function useLocalSessions(): UseLocalSessionsResult {
         setIsLoading(false)
       }
     }
-  }, [])
+  }, [enabled])
 
-  // Fetch on mount
+  // Fetch on mount (only when enabled)
   useEffect(() => {
+    if (!enabled) return
     fetchSessions()
     return () => abortRef.current?.abort()
-  }, [fetchSessions])
+  }, [enabled, fetchSessions])
 
-  // Re-fetch on window focus
+  // Re-fetch on window focus (only when enabled)
   useEffect(() => {
+    if (!enabled) return
     const onFocus = () => fetchSessions()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [fetchSessions])
+  }, [enabled, fetchSessions])
 
   return {
     sessions,

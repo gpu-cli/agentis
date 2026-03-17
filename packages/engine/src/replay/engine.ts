@@ -30,6 +30,13 @@ const INITIAL_STATE: ReplayEngineState = {
   progress: 0,
 }
 
+const GAP_SHORT_MS = 2000
+const GAP_LONG_MS = 10000
+const GAP_VERY_LONG_MS = 30000
+const COMPRESSED_SHORT_MS = 500
+const COMPRESSED_LONG_MS = 1000
+const COMPRESSED_VERY_LONG_MS = 1500
+
 export class ReplayEngine {
   private events: AgentEvent[] = []
   private state: ReplayEngineState = { ...INITIAL_STATE }
@@ -70,7 +77,7 @@ export class ReplayEngine {
   restart(): void {
     this.clearTimer()
     this.updateState({
-      playbackState: 'idle',
+      playbackState: 'paused',
       currentEventIndex: 0,
       progress: 0,
     })
@@ -142,7 +149,16 @@ export class ReplayEngine {
     // Schedule next event
     if (nextIndex < this.events.length) {
       const nextEvent = this.events[nextIndex]!
-      const rawDelay = (nextEvent.timestamp - event.timestamp) / this.state.speed
+      const rawGap = nextEvent.timestamp - event.timestamp
+      let compressedGap = rawGap
+      if (rawGap > GAP_VERY_LONG_MS) {
+        compressedGap = COMPRESSED_VERY_LONG_MS
+      } else if (rawGap > GAP_LONG_MS) {
+        compressedGap = COMPRESSED_LONG_MS
+      } else if (rawGap > GAP_SHORT_MS) {
+        compressedGap = COMPRESSED_SHORT_MS
+      }
+      const rawDelay = compressedGap / this.state.speed
       const clampedDelay = Math.max(80, Math.min(rawDelay, 5000))
       this.timerId = setTimeout(() => {
         this.timerId = null

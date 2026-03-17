@@ -3,6 +3,14 @@
 // ============================================================================
 
 import { useState, useRef, useEffect } from 'react'
+import {
+  Button,
+  Input,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@multiverse/ui'
 import { useAgentStore } from '../stores/agentStore'
 import { useUIStore } from '../stores/uiStore'
 import { SpriteIcon } from './SpriteIcon'
@@ -17,9 +25,12 @@ import type { ConversationMessage } from '@multiverse/shared'
  */
 function useLocalChat(agentId: string | null) {
   const [messages, setMessages] = useState<ConversationMessage[]>([])
+  const pendingAckTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([])
 
   // Reset messages when agent changes
   useEffect(() => {
+    pendingAckTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId))
+    pendingAckTimeoutsRef.current = []
     if (!agentId) return
     setMessages([
       {
@@ -30,6 +41,13 @@ function useLocalChat(agentId: string | null) {
       },
     ])
   }, [agentId])
+
+  useEffect(() => {
+    return () => {
+      pendingAckTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId))
+      pendingAckTimeoutsRef.current = []
+    }
+  }, [])
 
   const send = (text: string) => {
     if (!text.trim()) return
@@ -43,7 +61,7 @@ function useLocalChat(agentId: string | null) {
     setMessages((prev) => [...prev, userMsg])
 
     // Simulate agent acknowledgement after a short delay
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       const ackMsg: ConversationMessage = {
         id: `agent-${Date.now()}`,
         author: 'agent',
@@ -51,7 +69,9 @@ function useLocalChat(agentId: string | null) {
         timestamp: Date.now(),
       }
       setMessages((prev) => [...prev, ackMsg])
+      pendingAckTimeoutsRef.current = pendingAckTimeoutsRef.current.filter((id) => id !== timeoutId)
     }, 800)
+    pendingAckTimeoutsRef.current.push(timeoutId)
   }
 
   return { messages, send }
@@ -78,7 +98,8 @@ export function AgentChatPanel({ agentId }: { agentId: string }) {
 
   // Focus input when chat opens
   useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 100)
+    const timeoutId = setTimeout(() => inputRef.current?.focus(), 100)
+    return () => clearTimeout(timeoutId)
   }, [agentId])
 
   const agent = agents.get(agentId)
@@ -97,85 +118,97 @@ export function AgentChatPanel({ agentId }: { agentId: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* Header — back button, agent name, close */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 shrink-0">
-        <button
-          onClick={() => setConversationAgent(null)}
-          className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-white text-sm rounded hover:bg-gray-700 transition-colors"
-          aria-label="Back to agent details"
-          title="Back to details"
-        >
-          ←
-        </button>
+    <TooltipProvider delayDuration={300}>
+      <div className="flex flex-col h-full min-h-0">
+        {/* Header — back button, agent name, close */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setConversationAgent(null)}
+                className="h-7 w-7 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                aria-label="Back to details"
+              >
+                ←
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Back to details</TooltipContent>
+          </Tooltip>
         <SpriteIcon region={entitySprites.resolveAgent(agent.type, agent.id)} size={18} className="shrink-0" />
         <span className="font-pixel text-xs text-green-400 truncate flex-1 min-w-0">
           {agent.name}
         </span>
         <AgentTypeLogo type={agent.type} size={18} />
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => {
             setConversationAgent(null)
             clearSelection()
           }}
-          className="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-white text-sm rounded hover:bg-gray-700 transition-colors"
+          className="h-7 w-7 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           aria-label="Close panel"
         >
           ✕
-        </button>
-      </div>
+        </Button>
+        </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.author === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0">
+          {messages.map((msg) => (
             <div
-              className={`max-w-[80%] px-3 py-1.5 rounded-lg text-xs leading-relaxed ${
-                msg.author === 'user'
-                  ? 'bg-blue-600 text-blue-50 rounded-br-sm'
-                  : msg.author === 'agent'
-                    ? 'bg-gray-700 text-gray-200 rounded-bl-sm'
-                    : 'bg-gray-700/60 text-gray-400 rounded-bl-sm italic'
-              }`}
+              key={msg.id}
+              className={`flex ${msg.author === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {msg.author !== 'user' && (
-                <span className="text-[10px] text-gray-500 block mb-0.5">
-                  {msg.author === 'agent' ? agent.name : 'sub-agent'}
-                </span>
-              )}
-              {msg.content}
+              <div
+                className={`max-w-[80%] px-3 py-1.5 rounded-lg text-xs leading-relaxed ${
+                  msg.author === 'user'
+                    ? 'bg-blue-600 text-blue-50 rounded-br-sm'
+                    : msg.author === 'agent'
+                      ? 'bg-muted text-card-foreground rounded-bl-sm'
+                      : 'bg-muted/60 text-muted-foreground rounded-bl-sm italic'
+                }`}
+              >
+                {msg.author !== 'user' && (
+                  <span className="text-[10px] text-muted-foreground block mb-0.5">
+                    {msg.author === 'agent' ? agent.name : 'sub-agent'}
+                  </span>
+                )}
+                {msg.content}
+              </div>
             </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
 
-      {/* Input */}
-      <div className="shrink-0 border-t border-gray-700 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message…"
-            aria-label="Message to agent"
-            className="flex-1 bg-gray-700 text-gray-200 text-xs px-3 py-1.5 rounded border border-gray-600 focus:border-blue-500 focus:outline-none placeholder:text-gray-500"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!inputValue.trim()}
-            aria-label="Send message"
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white text-xs rounded font-pixel transition-colors"
-          >
-            Send
-          </button>
+        {/* Input */}
+        <div className="shrink-0 border-t border-border px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message…"
+              aria-label="Message to agent"
+              className="flex-1 bg-muted text-card-foreground text-xs h-auto py-1.5 border-input focus-visible:ring-ring placeholder:text-muted-foreground"
+            />
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleSend}
+              disabled={!inputValue.trim()}
+              aria-label="Send message"
+              className="h-7 bg-blue-600 px-3 text-xs font-pixel text-white hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600"
+            >
+              Send
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }

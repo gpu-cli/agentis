@@ -147,8 +147,10 @@ export class EventMarkerManager {
       marker.container.scale.set(0) // Start at 0 for scale-in
       marker.container.alpha = 1
 
-      // Set texture from tileset via EntitySpriteMap
-      const spriteKey = entitySprites.resolveEvent(category)
+      // Set texture from tileset via EntitySpriteMap — use deterministic variant
+      // so each error event gets a visually distinct but stable sprite
+      const severity = (log.event.metadata as Record<string, unknown> | undefined)?.severity as string | undefined
+      const spriteKey = entitySprites.resolveEventVariant(category, severity, log.event.id)
       const tex = assets.getAnyTileTexture(spriteKey)
       marker.sprite.texture = tex
       marker.sprite.width = MARKER_SIZE

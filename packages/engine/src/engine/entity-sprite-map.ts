@@ -31,7 +31,12 @@ export interface AgentSpriteConfig {
 export interface EntitySpriteConfig {
   agents: Record<string, AgentSpriteConfig>
   tools: Record<string, string>
-  events: Record<string, Record<string, string>>
+  /**
+   * Event sprite config. Each category maps severity levels to either:
+   *   - a single region key string (backward-compatible, no variability)
+   *   - an array of region keys (deterministic variant pool, selected by event ID hash)
+   */
+  events: Record<string, Record<string, string | string[]>>
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +67,13 @@ const DEFAULT_CONFIG: EntitySpriteConfig = {
     tool_image_gen:     'monster_ghost',  // dungeon tile_0114 — green potion
   },
   events: {
-    error:       { default: 'skull', warning: 'monster_bat', error: 'monster_slime', critical: 'monster_spider', outage: 'monster_rat' },
+    error: {
+      default:  ['skull', 'monster_skeleton', 'monster_zombie'],
+      warning:  ['monster_bat', 'monster_ghost', 'monster_slime'],
+      error:    ['monster_slime', 'monster_skeleton', 'monster_zombie', 'monster_bat'],
+      critical: ['monster_spider', 'monster_demon', 'monster_golem', 'monster_dragon'],
+      outage:   ['monster_rat', 'monster_boss_1', 'monster_boss_2', 'monster_dragon'],
+    },
     deployment:  { default: 'shovel' },
     file_change: { default: 'saw' },
     task:        { default: 'banner_1' },
@@ -93,6 +104,8 @@ const FALLBACK_EVENT_KEY = 'skull'
 
 // ---------------------------------------------------------------------------
 // JSON Config Path
+// Canonical source: apps/web/public/assets/config/entity-sprites.json
+// Loaded at runtime via fetch() from the web app's public directory.
 // ---------------------------------------------------------------------------
 
 const CONFIG_PATH = '/assets/config/entity-sprites.json'
@@ -158,7 +171,16 @@ export class EntitySpriteMap {
     if (user.events) {
       for (const [category, severityMap] of Object.entries(user.events)) {
         if (severityMap && typeof severityMap === 'object') {
-          this.config.events[category] = { ...this.config.events[category], ...severityMap }
+          // Validate each entry is a string or string[]
+          const validated: Record<string, string | string[]> = {}
+          for (const [sev, val] of Object.entries(severityMap)) {
+            if (typeof val === 'string') {
+              validated[sev] = val
+            } else if (Array.isArray(val) && val.length > 0 && val.every((v: unknown) => typeof v === 'string')) {
+              validated[sev] = val
+            }
+          }
+          this.config.events[category] = { ...this.config.events[category], ...validated }
         }
       }
     }
@@ -179,7 +201,13 @@ export class EntitySpriteMap {
     }
     for (const toolKey of Object.values(this.config.tools)) allKeys.add(toolKey)
     for (const severityMap of Object.values(this.config.events)) {
-      for (const regionKey of Object.values(severityMap)) allKeys.add(regionKey)
+      for (const value of Object.values(severityMap)) {
+        if (Array.isArray(value)) {
+          for (const regionKey of value) allKeys.add(regionKey)
+        } else {
+          allKeys.add(value)
+        }
+      }
     }
 
     if (allKeys.size > 0) {
@@ -235,6 +263,7 @@ export class EntitySpriteMap {
 
   /**
    * Resolve an event category + optional severity to a sprite region key.
+   * Returns the first element when the mapping is an array (stable default).
    *
    * @param category - Event category (e.g., 'error', 'deployment')
    * @param severity - Optional severity level (e.g., 'warning', 'critical')
@@ -245,9 +274,42 @@ export class EntitySpriteMap {
     if (!severityMap) return FALLBACK_EVENT_KEY
 
     if (severity && severityMap[severity]) {
-      return severityMap[severity]
+      const value = severityMap[severity]
+      return Array.isArray(value) ? (value[0] ?? FALLBACK_EVENT_KEY) : value
     }
-    return severityMap['default'] ?? FALLBACK_EVENT_KEY
+    const defaultValue = severityMap['default']
+    if (!defaultValue) return FALLBACK_EVENT_KEY
+    return Array.isArray(defaultValue) ? (defaultValue[0] ?? FALLBACK_EVENT_KEY) : defaultValue
+  }
+
+  /**
+   * Resolve an event to a deterministic-random sprite variant.
+   * Uses hash(eventId) to pick from the variant pool for the given severity,
+   * so the same event always renders the same sprite but different events
+   * get visually distinct sprites.
+   *
+   * @param category  - Event category (e.g., 'error')
+   * @param severity  - Severity level (e.g., 'warning', 'error', 'critical')
+   * @param eventId   - Unique event/monster ID for deterministic variant selection
+   * @returns Sprite region key
+   */
+  resolveEventVariant(category: WorldEventCategory | string, severity?: string, eventId?: string): string {
+    const severityMap = this.config.events[category]
+    if (!severityMap) return FALLBACK_EVENT_KEY
+
+    // Pick the right entry: severity-specific first, then 'default'
+    const entry = (severity && severityMap[severity]) ? severityMap[severity] : severityMap['default']
+    if (!entry) return FALLBACK_EVENT_KEY
+
+    // If it's a string (no variant pool), return directly
+    if (typeof entry === 'string') return entry
+
+    // Array variant pool — use hash of eventId for deterministic pick
+    if (entry.length === 0) return FALLBACK_EVENT_KEY
+    if (!eventId || entry.length === 1) return entry[0] ?? FALLBACK_EVENT_KEY
+
+    const idx = djb2Hash(eventId) % entry.length
+    return entry[idx] ?? entry[0] ?? FALLBACK_EVENT_KEY
   }
 
   /**
@@ -266,9 +328,18 @@ export class EntitySpriteMap {
 
   /**
    * Get all configured event categories and their severity→region mappings.
+   * For backward compatibility, array values are flattened to their first element.
    */
   getEventMap(): Readonly<Record<string, Record<string, string>>> {
-    return this.config.events
+    const result: Record<string, Record<string, string>> = {}
+    for (const [category, severityMap] of Object.entries(this.config.events)) {
+      const flat: Record<string, string> = {}
+      for (const [severity, value] of Object.entries(severityMap)) {
+        flat[severity] = Array.isArray(value) ? (value[0] ?? FALLBACK_EVENT_KEY) : value
+      }
+      result[category] = flat
+    }
+    return result
   }
 
   /**
@@ -299,19 +370,39 @@ export class EntitySpriteMap {
   /**
    * Get the monster-type → region key mapping from event error severities.
    * Used by AssetLoader to preload monster textures.
+   * Collects ALL variant keys so textures are preloaded for every possible sprite.
    */
   getMonsterSpriteMap(): Readonly<Record<string, string>> {
     const errorMap = this.config.events['error']
     if (!errorMap) return {}
-    // Map severity names (minus 'default') to their region keys
     const result: Record<string, string> = {}
-    for (const [severity, regionKey] of Object.entries(errorMap)) {
+    for (const [severity, value] of Object.entries(errorMap)) {
       if (severity === 'default') continue
-      // Extract monster type from region key (e.g., 'monster_slime' → 'slime')
-      const monsterType = regionKey.startsWith('monster_') ? regionKey.replace('monster_', '') : severity
-      result[monsterType] = regionKey
+      const keys = Array.isArray(value) ? value : [value]
+      for (const regionKey of keys) {
+        const monsterType = regionKey.startsWith('monster_') ? regionKey.replace('monster_', '') : `${severity}_${regionKey}`
+        result[monsterType] = regionKey
+      }
     }
     return result
+  }
+
+  /**
+   * Get ALL unique sprite region keys referenced in the error event config.
+   * Used by AssetLoader to preload every possible error/monster texture.
+   */
+  getAllErrorSpriteKeys(): string[] {
+    const errorMap = this.config.events['error']
+    if (!errorMap) return [FALLBACK_EVENT_KEY]
+    const keys = new Set<string>()
+    for (const value of Object.values(errorMap)) {
+      if (Array.isArray(value)) {
+        for (const k of value) keys.add(k)
+      } else {
+        keys.add(value)
+      }
+    }
+    return Array.from(keys)
   }
 
   /**

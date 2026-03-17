@@ -12,7 +12,7 @@ import {
 } from '../utils/naming'
 import { SpriteIcon } from './SpriteIcon'
 import { ResizableSidePanel } from './ResizableSidePanel'
-import { ScrollArea } from '@multiverse/ui'
+import { Button, ScrollArea } from '@multiverse/ui'
 
 
 
@@ -34,20 +34,25 @@ const COMPLETION_COLORS: Record<string, string> = {
   high: 'text-green-400',
   mid: 'text-yellow-400',
   low: 'text-red-400',
-  none: 'text-gray-500',
+  none: 'text-muted-foreground',
 }
 
+type DistrictMap = ReturnType<typeof useUniverseStore.getState>['districts']
+type IslandMap = ReturnType<typeof useUniverseStore.getState>['islands']
+
 function completionClass(health: number): string {
-  if (health >= 80) return COMPLETION_COLORS.high!
-  if (health >= 50) return COMPLETION_COLORS.mid!
-  if (health > 0) return COMPLETION_COLORS.low!
-  return COMPLETION_COLORS.none!
+  if (health >= 80) return COMPLETION_COLORS.high ?? 'text-green-400'
+  if (health >= 50) return COMPLETION_COLORS.mid ?? 'text-yellow-400'
+  if (health > 0) return COMPLETION_COLORS.low ?? 'text-red-400'
+  return COMPLETION_COLORS.none ?? 'text-muted-foreground'
 }
 
 /** Derive the repo name from island external_ref, e.g. "acme/api" */
-function getRepoName(buildingDistrictId: string): { name: string; url: string | null } | null {
-  const districts = useUniverseStore.getState().districts
-  const islands = useUniverseStore.getState().islands
+function getRepoName(
+  buildingDistrictId: string,
+  districts: DistrictMap,
+  islands: IslandMap,
+): { name: string; url: string | null } | null {
   const district = districts.get(buildingDistrictId)
   if (!district) return null
   const island = islands.get(district.island_id)
@@ -66,6 +71,8 @@ export function BuildingPanel() {
   const selectedType = useUIStore((s) => s.selectedEntityType)
   const clearSelection = useUIStore((s) => s.clearSelection)
   const buildings = useUniverseStore((s) => s.buildings)
+  const districts = useUniverseStore((s) => s.districts)
+  const islands = useUniverseStore((s) => s.islands)
   const tiles = useUniverseStore((s) => s.tiles)
 
   if (selectedType !== 'building' || !selectedId) return null
@@ -81,31 +88,33 @@ export function BuildingPanel() {
   const displayName = friendlyBuildingName(building.name)
   const filePath = buildingFilePath(building.external_ref, building.name)
   const sourceUrl = buildingSourceUrl(building.external_ref)
-  const repo = getRepoName(building.district_id)
+  const repo = getRepoName(building.district_id, districts, islands)
 
   const buildingSpriteKey = 'window_brick' // tile_0063
 
   return (
     <ResizableSidePanel>
-      <div className="p-4 flex-1 min-h-0 overflow-y-auto">
+      <div className="p-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-pixel text-sm text-blue-400 truncate min-w-0">
             {displayName}
           </h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={clearSelection}
-            className="text-gray-500 hover:text-white text-lg shrink-0 ml-2 w-7 h-7 flex items-center justify-center rounded hover:bg-gray-700 transition-colors"
+            className="ml-2 h-7 w-7 shrink-0 text-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             aria-label="Close panel"
           >
             ✕
-          </button>
+          </Button>
         </div>
 
         {/* Repo — first, above Path */}
         {repo && (
           <div className="mb-3">
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">Repository</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Repository</span>
             {repo.url ? (
               <a
                 href={repo.url}
@@ -115,40 +124,40 @@ export function BuildingPanel() {
               >
                 <span>📦</span>
                 <span className="hover:underline">{repo.name}</span>
-                <span className="text-[10px] text-gray-500">↗</span>
+                <span className="text-[10px] text-muted-foreground">↗</span>
               </a>
             ) : (
-              <p className="text-sm text-gray-300 mt-0.5">{repo.name}</p>
+              <p className="text-sm text-card-foreground mt-0.5">{repo.name}</p>
             )}
           </div>
         )}
 
         {/* Path (was "Directory") */}
         <div className="mb-4">
-          <span className="text-[10px] uppercase tracking-wider text-gray-500">Path</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Path</span>
           {sourceUrl ? (
             <a
               href={sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="block text-xs text-blue-400 hover:text-blue-300 hover:underline font-mono bg-gray-900/80 rounded px-2.5 py-1.5 mt-1 transition-colors"
+              className="block text-xs text-blue-400 hover:text-blue-300 hover:underline font-mono bg-card/80 rounded px-2.5 py-1.5 mt-1 transition-colors"
             >
               {filePath}
             </a>
           ) : (
-            <p className="text-xs text-gray-300 font-mono bg-gray-900/80 rounded px-2.5 py-1.5 mt-1">
+            <p className="text-xs text-card-foreground font-mono bg-card/80 rounded px-2.5 py-1.5 mt-1">
               {filePath}
             </p>
           )}
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-700 mb-4" />
+        <div className="border-t border-border mb-4" />
 
         {/* Stats — stacked vertically */}
         <div className="space-y-3 mb-4">
           <div>
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">Complete</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Complete</span>
             <div className="flex items-center gap-1.5 mt-1">
               <SpriteIcon region="flag" size={28} className="shrink-0" />
               <span className={`text-xs font-pixel leading-none ${completionClass(building.health)}`}>
@@ -157,19 +166,19 @@ export function BuildingPanel() {
             </div>
           </div>
           <div>
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">Files</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Files</span>
             <div className="flex items-center gap-1.5 mt-1">
               <SpriteIcon region="lantern" size={28} className="shrink-0" />
-              <span className="text-xs font-pixel text-gray-200 leading-none">
+              <span className="text-xs font-pixel text-card-foreground leading-none">
                 {building.file_count}
               </span>
             </div>
           </div>
           <div>
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">Architecture</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Architecture</span>
             <div className="flex items-center gap-1.5 mt-1">
               <SpriteIcon region={buildingSpriteKey} size={28} className="shrink-0" />
-              <span className="text-xs font-pixel text-gray-300 capitalize leading-none">
+              <span className="text-xs font-pixel text-card-foreground capitalize leading-none">
                 {building.style.replace(/_/g, ' ')}
               </span>
             </div>
@@ -177,15 +186,15 @@ export function BuildingPanel() {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-700 mb-4" />
+        <div className="border-t border-border mb-4" />
 
         {/* File list */}
         <div>
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 mb-2 block">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 block">
             Files ({buildingTiles.length})
           </span>
           {buildingTiles.length === 0 ? (
-            <p className="text-xs text-gray-600 italic">
+            <p className="text-xs text-muted-foreground/60 italic">
               No files discovered yet
             </p>
           ) : (
@@ -194,13 +203,13 @@ export function BuildingPanel() {
                 {buildingTiles.map((tile) => (
                   <div
                     key={tile.id}
-                    className="flex items-center gap-2 text-xs bg-gray-700/50 rounded px-2.5 py-2"
+                    className="flex items-center gap-2 text-xs bg-muted/50 rounded px-2.5 py-2"
                   >
-                    <span className="text-gray-400 shrink-0 inline-flex items-center gap-1">
+                    <span className="text-muted-foreground shrink-0 inline-flex items-center gap-1">
                       <span>{STATE_EMOJI[tile.state] ?? '❓'}</span>
                       {STATE_LABELS[tile.state] ?? tile.state}
                     </span>
-                    <code className="bg-gray-600/50 px-1 rounded text-gray-200 truncate min-w-0">
+                    <code className="bg-muted/50 px-1 rounded text-card-foreground truncate min-w-0">
                       {tile.file_name}
                     </code>
                   </div>

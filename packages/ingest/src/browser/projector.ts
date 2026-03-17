@@ -367,6 +367,16 @@ function buildAgentEventsFromReplay(input: UniversalEventsPackage): AgentEvent[]
   // directly reference a building can still be placed at a reasonable location.
   const lastBuildingPerAgent = new Map<string, string>()
 
+  // Build event→severity lookup from issues (so error_spawn gets the right severity)
+  const eventSeverityMap = new Map<string, string>()
+  if (input.issues) {
+    for (const issue of input.issues) {
+      for (const eventId of issue.linkedEventIds) {
+        eventSeverityMap.set(eventId, issue.severity)
+      }
+    }
+  }
+
   // Collect all building IDs from topology for fallback
   const allBuildingIds = input.topology.artifacts
     .filter((a) => a.kind === 'file')
@@ -423,13 +433,29 @@ function buildAgentEventsFromReplay(input: UniversalEventsPackage): AgentEvent[]
       monsterCounter++
       const monsterId = `monster_synth_${monsterCounter}`
 
+      // Resolve severity: prefer issue-linked severity, fall back to deterministic
+      // hash-based selection so different errors get visually distinct monsters
+      const VALID_SEVERITIES = ['warning', 'error', 'critical', 'outage']
+      const issueSeverity = eventSeverityMap.get(event.id)
+      let severity: string
+      if (issueSeverity && VALID_SEVERITIES.includes(issueSeverity)) {
+        severity = issueSeverity
+      } else {
+        // Deterministic severity from event ID hash (weighted toward 'error')
+        const SEVERITY_POOL = ['warning', 'error', 'error', 'critical'] as const
+        severity = SEVERITY_POOL[Math.abs(simpleHash(event.id)) % SEVERITY_POOL.length]!
+      }
+
       // Inject monster_id and severity into the error_spawn target/metadata
+      // Prefer errorPreview from ingest (real transcript output) over generic action label
       agentEvent.target = { ...agentEvent.target, monster_id: monsterId }
       const existingMeta = agentEvent.metadata as Record<string, unknown> | undefined
+      const ctx = event.context as Record<string, unknown> | null | undefined
+      const errorPreview = typeof ctx?.errorPreview === 'string' ? ctx.errorPreview : undefined
       agentEvent.metadata = {
         ...existingMeta,
-        severity: 'error',
-        message: existingMeta?.['action'] ?? 'Error detected',
+        severity,
+        message: errorPreview ?? existingMeta?.['action'] ?? 'Error detected',
       }
 
       openMonsters.push({ monsterId, agentId: event.actorId, buildingId, spawnTimestamp: timestamp })

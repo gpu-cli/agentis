@@ -84,8 +84,8 @@ export class WorldRenderer {
     //  10  labels            — all text labels (island, district, building names)
     //  39  heat overlay      — heat/halo glow for recent write activity
     //  40  fog               — fog-of-war overlay (eventMode=none)
-    //  41  monsters          — error/incident monster sprites (ABOVE fog)
-    //  42  agents            — agent sprites (ABOVE fog + monsters)
+    //  41  monsters          — error/incident monster sprites (ABOVE fog, BELOW agents)
+    //  42  agents            — agent sprites (ABOVE fog + monsters — always on top)
     //  45  selection highlight — ABOVE fog so always visible
     // ---------------------------------------------------------------
 
@@ -140,15 +140,15 @@ export class WorldRenderer {
     this.fog.container.interactiveChildren = false
     this.camera.viewport.addChild(this.fog.container)
 
-    // Agents — ABOVE fog so agents are always visible
+    // Monsters — ABOVE fog so error sprites are visible, but BELOW agents
+    this.monsterManager = new MonsterManager()
+    this.monsterManager.container.zIndex = 41
+    this.camera.viewport.addChild(this.monsterManager.container)
+
+    // Agents — ABOVE fog AND monsters so agents are always on top
     this.agentManager = new AgentManager()
     this.agentManager.container.zIndex = 42
     this.camera.viewport.addChild(this.agentManager.container)
-
-    // Monsters — ABOVE agents so error sprites render on top
-    this.monsterManager = new MonsterManager()
-    this.monsterManager.container.zIndex = 43
-    this.camera.viewport.addChild(this.monsterManager.container)
 
     // Selection highlight — ABOVE fog so highlights are always visible
     // regardless of fog-of-war coverage. Uses stroke outlines + subtle fill.
