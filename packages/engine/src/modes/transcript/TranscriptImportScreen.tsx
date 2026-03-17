@@ -254,9 +254,9 @@ function AutoDetectedPanel({
 
 function PrivacyDisclosure() {
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+    <p className="text-xs text-muted-foreground/70 mt-1.5">
       Choose between a local session or upload a Claude Code transcript file.
-    </div>
+    </p>
   )
 }
 
@@ -299,7 +299,7 @@ export function TranscriptImportScreen({
   return (
     <div className="w-full h-full bg-gradient-to-b from-background to-background text-foreground flex items-center justify-center p-6 md:p-10 relative">
       <OnboardingBackdrop />
-      <div className="relative z-10 w-full max-w-3xl bg-surface-2/80 border border-border rounded-xl shadow-2xl backdrop-blur-sm max-h-[90vh] flex flex-col">
+        <div className="relative z-10 w-full max-w-3xl bg-surface-3 border border-border rounded-xl shadow-2xl backdrop-blur-sm max-h-[90vh] flex flex-col">
         {/* Fixed header */}
         <div className="p-6 pb-0 shrink-0">
           <h1 className="font-pixel text-lg text-primary mb-1">Import Transcripts</h1>
@@ -311,24 +311,24 @@ export function TranscriptImportScreen({
           <div className="px-6 md:px-8 py-4">
             {/* Warning banner */}
             {warning && (
-              <div className="mb-4 bg-yellow-900/30 border border-yellow-700/50 rounded px-3 py-2 text-xs text-yellow-200">
+              <div className="mb-4 rounded-lg border border-yellow-600/40 bg-yellow-950/20 px-4 py-3 text-xs text-yellow-200" role="alert">
                 {warning}
               </div>
             )}
 
             {/* Local session load error */}
             {localError && (
-              <div className="mb-4 bg-red-900/30 border border-red-700/50 rounded px-3 py-2 text-xs text-red-300">
+              <div className="mb-4 rounded-lg border border-red-500/30 bg-red-950/20 px-4 py-3 text-xs text-red-300" role="alert">
                 {localError}
               </div>
             )}
 
             {/* ===== Tabs: Auto Import / Manual Upload ===== */}
             <Tabs defaultValue={defaultTab} className="w-full">
-              <TabsList className="w-full bg-card/60 border border-border/50 rounded-lg p-1 mb-4">
+              <TabsList className="w-full bg-surface-1/60 border border-border/40 rounded-lg p-1 mb-5">
                 <TabsTrigger
                   value="auto"
-                  className="flex-1 text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=inactive]:text-muted-foreground rounded-md px-3 py-1.5 transition-colors"
+                  className="flex-1 text-xs font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm data-[state=active]:shadow-primary/20 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground/70 rounded-md px-3 py-2 transition-all duration-150"
                 >
                   Sessions{!sessionsLoading && sessions.length > 0 && (
                     <span className="ml-1.5 text-[10px] opacity-70">({sessions.length})</span>
@@ -336,7 +336,7 @@ export function TranscriptImportScreen({
                 </TabsTrigger>
                 <TabsTrigger
                   value="manual"
-                  className="flex-1 text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=inactive]:text-muted-foreground rounded-md px-3 py-1.5 transition-colors"
+                  className="flex-1 text-xs font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm data-[state=active]:shadow-primary/20 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground/70 rounded-md px-3 py-2 transition-all duration-150"
                 >
                   Upload
                 </TabsTrigger>

@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["AGENTIS_STATIC_EXPORT", "AGENTIS_LOCAL_MODE", "NEXT_PUBLIC_AGENTIS_LOCAL"],
+  "globalEnv": ["AGENTIS_STATIC_EXPORT", "AGENTIS_LOCAL_MODE", "NEXT_PUBLIC_AGENTIS_LOCAL", "NEXT_PUBLIC_ENABLE_INTERNAL_TRANSCRIPT"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

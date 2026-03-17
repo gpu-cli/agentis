@@ -397,14 +397,7 @@ function hashColor(str: string): number {
   return (r << 16) | (g << 8) | b
 }
 
-/** Simple seeded hash for deterministic pseudo-random positioning */
-function seededRand(seed: number): number {
-  let s = seed | 0
-  s = ((s + 0x6d2b79f5) | 0)
-  let t = Math.imul(s ^ (s >>> 15), 1 | s)
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-}
+// seededRand removed — replaced by deterministic SPACING_OFFSETS in toAgent()
 
 /**
  * Determine the most specific work location for an agent by tracing
@@ -499,13 +492,18 @@ function toAgent(actor: ActorRef, snapshot: WorldModelSnapshot, index: number): 
   // Position agent at their most specific work location
   const workLoc = findAgentWorkLocation(actor.id, snapshot)
 
-  // Add seeded jitter so agents don't stack on the same spot
-  const seed = djb2(actor.id + ':pos')
-  const jitterX = Math.floor(seededRand(seed) * 3) - 1 // -1, 0, or 1
-  const jitterY = Math.floor(seededRand(seed + 9973) * 3) - 1
-
-  const x = workLoc ? workLoc.x + jitterX : 10
-  const y = workLoc ? workLoc.y + jitterY : 10
+  // Deterministic spacing: use agent index to assign distinct offsets
+  // so agents sharing a work location never stack on the same tile.
+  // Spiral pattern ensures agents fan out predictably from center.
+  const SPACING_OFFSETS: Array<[number, number]> = [
+    [0, 0], [2, 0], [0, 2], [-2, 0], [0, -2],
+    [2, 2], [-2, 2], [2, -2], [-2, -2],
+    [3, 1], [1, 3], [-1, 3], [-3, 1],
+    [-3, -1], [-1, -3], [1, -3], [3, -1],
+  ]
+  const offset = SPACING_OFFSETS[index % SPACING_OFFSETS.length]!
+  const x = workLoc ? workLoc.x + offset[0] : 10 + offset[0]
+  const y = workLoc ? workLoc.y + offset[1] : 10 + offset[1]
 
   // Deterministically assign agent type from pool based on actor ID
   // so different agents get visually distinct sprites

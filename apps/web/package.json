@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build",
-    "build:export": "AGENTIS_STATIC_EXPORT=true next build",
-    "start": "next start -p 3000",
+    "dev": "../../scripts/with-root-env.sh next dev -p 3000",
+    "build": "../../scripts/with-root-env.sh next build",
+    "build:export": "AGENTIS_STATIC_EXPORT=true ../../scripts/with-root-env.sh next build",
+    "start": "../../scripts/with-root-env.sh next start -p 3000",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },

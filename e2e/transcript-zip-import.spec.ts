@@ -132,14 +132,14 @@ test.describe('Transcript Import Flows', () => {
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles(filePath)
 
-    await expect(page.getByText('1 file(s) selected')).toBeVisible()
+    await expect(page.getByText('1 file ready')).toBeVisible()
 
     fs.unlinkSync(filePath)
   })
 
   test('Zip mode: upload screen accepts .zip files', async ({ page }) => {
     // Switch to Zip mode
-    await page.getByRole('button', { name: 'Zip' }).click()
+    await page.getByRole('radio', { name: 'Zip' }).click()
 
     // Create a valid .zip containing session.jsonl
     const jsonlContent = VALID_RECORDS.map(r => JSON.stringify(r)).join('\n')
@@ -151,7 +151,7 @@ test.describe('Transcript Import Flows', () => {
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles(zipPath)
 
-    await expect(page.getByText('1 file(s) selected')).toBeVisible()
+    await expect(page.getByText('1 file ready')).toBeVisible()
 
     fs.unlinkSync(zipPath)
     fs.rmdirSync(dir)
@@ -159,7 +159,7 @@ test.describe('Transcript Import Flows', () => {
 
   test('Zip mode: corrupted zip shows error gracefully', async ({ page }) => {
     // Switch to Zip mode
-    await page.getByRole('button', { name: 'Zip' }).click()
+    await page.getByRole('radio', { name: 'Zip' }).click()
 
     // Create a corrupted .zip file (just random bytes with .zip extension)
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'multiverse-e2e-zip-'))
@@ -171,10 +171,10 @@ test.describe('Transcript Import Flows', () => {
 
     // Fill in project name and try to import
     await page.getByPlaceholder('your-repo-name').fill('test-project')
-    await page.getByRole('button', { name: 'Create Replay' }).click()
+    await page.getByRole('button', { name: 'Visualize' }).click()
 
     // Should show an error message rather than crashing
-    await expect(page.locator('.text-red-400')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[role="alert"]')).toBeVisible({ timeout: 10000 })
 
     fs.unlinkSync(zipPath)
     fs.rmdirSync(dir)

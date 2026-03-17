@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schemastore.org/entity-sprites.json",
-  "$comment": "User-editable entity sprite config. Maps semantic entity roles to sprite region keys. Edit this file to customize which sprite appears for each agent type, tool, and event category without touching TypeScript. Region keys must exist in TINY_DUNGEON_REGIONS / TINY_TOWN_REGIONS in SpriteConfig.ts.",
+  "$comment": "User-editable entity sprite config. All agent keys must be in ALLOWED_AGENT_SPRITES and all error keys must be in ALLOWED_ERROR_SPRITES (see entity-sprite-map.ts). Keys outside those allowlists are rejected at load time.",
 
   "agents": {
     "claude": {
@@ -8,20 +8,20 @@
       "variants": ["hero_knight", "npc_guard", "hero_cleric"]
     },
     "cursor": {
-      "base": "hero_rogue",
-      "variants": ["hero_rogue", "npc_thief", "npc_assassin"]
+      "base": "hero_mage",
+      "variants": ["hero_mage", "npc_wizard", "npc_priest"]
     },
     "codex": {
-      "base": "hero_mage",
-      "variants": ["hero_mage", "npc_wizard", "npc_monk"]
+      "base": "npc_wizard",
+      "variants": ["npc_wizard", "hero_mage", "npc_bard"]
     },
     "gemini": {
-      "base": "hero_ranger",
-      "variants": ["hero_ranger", "npc_bard", "npc_farmer"]
+      "base": "npc_bard",
+      "variants": ["npc_bard", "npc_priest", "hero_cleric"]
     },
     "openclaw": {
-      "base": "hero_barb",
-      "variants": ["hero_barb", "npc_smith", "npc_elder"]
+      "base": "npc_guard",
+      "variants": ["npc_guard", "monster_skeleton", "hero_knight"]
     }
   },
 
@@ -30,24 +30,24 @@
     "tool_file_read":     "saw",
     "tool_web_search":    "bucket",
     "tool_terminal":      "bridge_end_r",
-    "tool_git":           "sword_town",
-    "tool_testing":       "monster_golem",
+    "tool_git":           "gold_bar",
+    "tool_testing":       "mushroom",
     "tool_deploy":        "shovel",
     "tool_documentation": "arrow_item",
     "tool_slack":         "target_board",
     "tool_email":         "target_board",
     "tool_database":      "mushroom",
     "tool_api_call":      "hammer_town",
-    "tool_image_gen":     "monster_ghost"
+    "tool_image_gen":     "bucket"
   },
 
   "events": {
     "error": {
-      "default":  ["skull", "monster_skeleton", "monster_zombie"],
-      "warning":  ["monster_bat", "monster_ghost", "monster_slime"],
-      "error":    ["monster_slime", "monster_skeleton", "monster_zombie", "monster_bat"],
-      "critical": ["monster_spider", "monster_demon", "monster_golem", "monster_dragon"],
-      "outage":   ["monster_rat", "monster_boss_1", "monster_boss_2", "monster_dragon"]
+      "default":  ["monster_slime", "monster_bat", "monster_spider"],
+      "warning":  ["monster_slime", "monster_bat", "monster_rat"],
+      "error":    ["monster_spider", "monster_rat", "npc_smith", "hero_rogue"],
+      "critical": ["hero_ranger", "item_sword", "item_axe", "item_dagger"],
+      "outage":   ["item_sword", "item_axe", "item_dagger", "hero_ranger"]
     },
     "deployment": {
       "default": "shovel"
@@ -62,7 +62,7 @@
       "default": "target_board"
     },
     "combat": {
-      "default": "monster_boss_1"
+      "default": "item_sword"
     }
   }
 }

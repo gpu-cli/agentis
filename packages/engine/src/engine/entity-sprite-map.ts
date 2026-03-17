@@ -40,45 +40,80 @@ export interface EntitySpriteConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Approved Sprite Allowlists — Curated from atlas A (tilemap_tiny-dungeon.png)
+//
+// Agent sprites: character-like, non-weapon sprites only
+// Error sprites: creature/monster sprites only (no items, no heroes)
+// ---------------------------------------------------------------------------
+
+/** Approved agent body sprites — only these may render as agent characters */
+export const ALLOWED_AGENT_SPRITES = new Set([
+  'hero_knight',      // td(0,7) — tile_0084
+  'hero_mage',        // td(1,7) — tile_0085
+  'hero_cleric',      // td(4,7) — tile_0088
+  'npc_guard',        // td(0,8) — tile_0096
+  'npc_wizard',       // td(1,8) — tile_0097
+  'npc_priest',       // td(2,8) — tile_0098
+  'npc_bard',         // td(3,8) — tile_0099
+  'monster_skeleton',  // td(4,9) — tile_0112
+])
+
+/** Approved error/monster sprites — only these may render as error entities */
+export const ALLOWED_ERROR_SPRITES = new Set([
+  'hero_rogue',       // td(2,7) — tile_0086
+  'hero_ranger',      // td(3,7) — tile_0087
+  'npc_smith',        // td(4,8) — tile_0100
+  'monster_slime',    // td(0,9) — tile_0108
+  'monster_bat',      // td(1,9) — tile_0109
+  'monster_spider',   // td(2,9) — tile_0110
+  'monster_rat',      // td(3,9) — tile_0111
+  'item_sword',       // td(0,10) — tile_0120 (creature-like in this atlas)
+  'item_axe',         // td(1,10) — tile_0121 (creature-like in this atlas)
+  'item_dagger',      // td(2,10) — tile_0122 (creature-like in this atlas)
+])
+
+// ---------------------------------------------------------------------------
 // Hardcoded Defaults (used when JSON fails to load)
+//
+// All agent/error keys MUST be from the approved allowlists above.
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIG: EntitySpriteConfig = {
   agents: {
     claude:   { base: 'hero_knight',  variants: ['hero_knight', 'npc_guard', 'hero_cleric'] },
-    cursor:   { base: 'hero_rogue',   variants: ['hero_rogue', 'npc_thief', 'npc_assassin'] },
-    codex:    { base: 'hero_mage',    variants: ['hero_mage', 'npc_wizard', 'npc_monk'] },
-    gemini:   { base: 'hero_ranger',  variants: ['hero_ranger', 'npc_bard', 'npc_farmer'] },
-    openclaw: { base: 'hero_barb',    variants: ['hero_barb', 'npc_smith', 'npc_elder'] },
+    cursor:   { base: 'hero_mage',    variants: ['hero_mage', 'npc_wizard', 'npc_priest'] },
+    codex:    { base: 'npc_wizard',   variants: ['npc_wizard', 'hero_mage', 'npc_bard'] },
+    gemini:   { base: 'npc_bard',     variants: ['npc_bard', 'npc_priest', 'hero_cleric'] },
+    openclaw: { base: 'npc_guard',    variants: ['npc_guard', 'monster_skeleton', 'hero_knight'] },
   },
   tools: {
     tool_code_edit:     'shield_town',    // town tile_0129 — shield/armor icon
     tool_file_read:     'saw',            // town tile_0117 — saw/glasses icon
     tool_web_search:    'bucket',         // town tile_0119 — bucket/magnifier icon
     tool_terminal:      'bridge_end_r',   // town tile_0115 — anvil/terminal icon
-    tool_git:           'sword_town',     // town tile_0128 — lantern/scroll icon
-    tool_testing:       'monster_golem',  // dungeon tile_0115 — red potion
+    tool_git:           'gold_bar',       // town tile_0130 — non-weapon icon
+    tool_testing:       'mushroom',       // town tile_0094 — non-weapon icon
     tool_deploy:        'shovel',         // town tile_0118 — flag/rocket icon
     tool_documentation: 'arrow_item',     // town tile_0131 — bookshelf icon
     tool_slack:         'target_board',   // town tile_0083 — chest/comms icon
     tool_email:         'target_board',   // town tile_0083 — chest/comms icon
     tool_database:      'mushroom',       // town tile_0094 — bell/orb icon
     tool_api_call:      'hammer_town',    // town tile_0116 — well/beacon icon
-    tool_image_gen:     'monster_ghost',  // dungeon tile_0114 — green potion
+    tool_image_gen:     'bucket',         // town tile_0119 — non-weapon icon
   },
   events: {
     error: {
-      default:  ['skull', 'monster_skeleton', 'monster_zombie'],
-      warning:  ['monster_bat', 'monster_ghost', 'monster_slime'],
-      error:    ['monster_slime', 'monster_skeleton', 'monster_zombie', 'monster_bat'],
-      critical: ['monster_spider', 'monster_demon', 'monster_golem', 'monster_dragon'],
-      outage:   ['monster_rat', 'monster_boss_1', 'monster_boss_2', 'monster_dragon'],
+      default:  ['monster_slime', 'monster_bat', 'monster_spider'],
+      warning:  ['monster_slime', 'monster_bat', 'monster_rat'],
+      error:    ['monster_spider', 'monster_rat', 'npc_smith', 'hero_rogue'],
+      critical: ['hero_ranger', 'item_sword', 'item_axe', 'item_dagger'],
+      outage:   ['item_sword', 'item_axe', 'item_dagger', 'hero_ranger'],
     },
     deployment:  { default: 'shovel' },
     file_change: { default: 'saw' },
     task:        { default: 'banner_1' },
     comms:       { default: 'target_board' },
-    combat:      { default: 'monster_boss_1' },
+    combat:      { default: 'item_sword' },
   },
 }
 
@@ -101,7 +136,8 @@ function fnv1aHash(str: string): number {
 
 const FALLBACK_AGENT_KEY = 'hero_knight'
 const FALLBACK_TOOL_KEY = 'gold_bar'
-const FALLBACK_EVENT_KEY = 'skull'
+const FALLBACK_EVENT_KEY = 'monster_slime'
+const FALLBACK_ERROR_KEY = 'monster_slime'
 
 // ---------------------------------------------------------------------------
 // JSON Config Path
@@ -188,14 +224,49 @@ export class EntitySpriteMap {
   }
 
   /**
-   * Validate that all config values reference known region keys.
-   * Logs warnings for missing keys but doesn't fail.
+   * Validate and enforce allowlists on loaded config.
+   * - Agent sprite keys not in ALLOWED_AGENT_SPRITES are replaced with fallback
+   * - Error sprite keys not in ALLOWED_ERROR_SPRITES are replaced with fallback
+   * Logs warnings for rejected keys so config drift is visible.
    */
   private validateConfig(): void {
-    // Import-free validation — we just log warnings about potential issues.
-    // Actual texture resolution validates at render time via the atlas registry.
-    const allKeys = new Set<string>()
+    // Enforce agent sprite allowlist
+    for (const [type, agentConfig] of Object.entries(this.config.agents)) {
+      if (!ALLOWED_AGENT_SPRITES.has(agentConfig.base)) {
+        console.warn(`[EntitySpriteMap] Agent "${type}" base "${agentConfig.base}" not in allowlist, replacing with "${FALLBACK_AGENT_KEY}"`)
+        agentConfig.base = FALLBACK_AGENT_KEY
+      }
+      const filtered = agentConfig.variants.filter(v => {
+        if (!ALLOWED_AGENT_SPRITES.has(v)) {
+          console.warn(`[EntitySpriteMap] Agent "${type}" variant "${v}" not in allowlist, removing`)
+          return false
+        }
+        return true
+      })
+      agentConfig.variants = filtered.length > 0 ? filtered : [agentConfig.base]
+    }
 
+    // Enforce error sprite allowlist
+    const errorConfig = this.config.events['error']
+    if (errorConfig) {
+      for (const [severity, value] of Object.entries(errorConfig)) {
+        if (Array.isArray(value)) {
+          const filtered = value.filter(v => {
+            if (!ALLOWED_ERROR_SPRITES.has(v)) {
+              console.warn(`[EntitySpriteMap] Error "${severity}" variant "${v}" not in allowlist, removing`)
+              return false
+            }
+            return true
+          })
+          errorConfig[severity] = filtered.length > 0 ? filtered : [FALLBACK_ERROR_KEY]
+        } else if (typeof value === 'string' && !ALLOWED_ERROR_SPRITES.has(value)) {
+          console.warn(`[EntitySpriteMap] Error "${severity}" key "${value}" not in allowlist, replacing`)
+          errorConfig[severity] = FALLBACK_ERROR_KEY
+        }
+      }
+    }
+
+    const allKeys = new Set<string>()
     for (const agentConfig of Object.values(this.config.agents)) {
       allKeys.add(agentConfig.base)
       for (const v of agentConfig.variants) allKeys.add(v)
@@ -210,10 +281,7 @@ export class EntitySpriteMap {
         }
       }
     }
-
-    if (allKeys.size > 0) {
-      console.log(`[EntitySpriteMap] Config references ${allKeys.size} unique region keys`)
-    }
+    console.log(`[EntitySpriteMap] Config validated: ${allKeys.size} unique region keys`)
   }
 
   // -----------------------------------------------------------------------

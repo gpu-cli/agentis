@@ -110,27 +110,16 @@ function resetState() {
 function processEventForDiffs(event: AgentEvent): void {
   switch (event.type) {
     case 'move': {
-      const buildingId = event.target?.building_id
-      if (buildingId) {
-        const bpos = buildingPositions.get(buildingId)
-        if (bpos) {
-          // Use tile-local offset when available (F3.3: agent moves to specific tile)
-          const local = (event.metadata as { local?: { x: number; y: number } })?.local
-          const TILE = 32
-          const px = local
-            ? bpos.x + local.x * TILE + TILE / 2
-            : bpos.x
-          const py = local
-            ? bpos.y + local.y * TILE + TILE / 2
-            : bpos.y
-          agentPositions.set(event.agent_id, { x: px, y: py })
-          coalescer.add({
-            type: 'agent_move',
-            id: event.agent_id,
-            x: px,
-            y: py,
-          })
-        }
+      const target = resolveWorkTargetPixel(event)
+      if (target) {
+        const pos = findNonOverlappingPixelPos(target.x, target.y, event.agent_id)
+        agentPositions.set(event.agent_id, pos)
+        coalescer.add({
+          type: 'agent_move',
+          id: event.agent_id,
+          x: pos.x,
+          y: pos.y,
+        })
       }
       break
     }
@@ -238,19 +227,74 @@ function processEventForDiffs(event: AgentEvent): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Collision-Aware Placement — Prevents agents from stacking on same pixel
+// ---------------------------------------------------------------------------
+
+/** Minimum separation in pixels between agents */
+const AGENT_SEPARATION_PX = 20
+
 /**
- * Auto-move the agent to the building/tile targeted by a work event.
- * Mirrors store-side autoMoveAgentToWorkTarget() to keep diff-driven
- * rendering in sync with store-driven rendering.
+ * Spiral offsets in pixels for finding a non-overlapping position.
+ * Each offset is [dx, dy] in pixels. The search radiates outward from the
+ * target position to find the nearest unoccupied slot.
  */
-function emitAgentMoveForWorkEvent(event: AgentEvent): void {
+const PIXEL_SPIRAL_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [AGENT_SEPARATION_PX, 0], [0, AGENT_SEPARATION_PX],
+  [-AGENT_SEPARATION_PX, 0], [0, -AGENT_SEPARATION_PX],
+  [AGENT_SEPARATION_PX, AGENT_SEPARATION_PX], [-AGENT_SEPARATION_PX, AGENT_SEPARATION_PX],
+  [AGENT_SEPARATION_PX, -AGENT_SEPARATION_PX], [-AGENT_SEPARATION_PX, -AGENT_SEPARATION_PX],
+  [AGENT_SEPARATION_PX * 2, 0], [0, AGENT_SEPARATION_PX * 2],
+  [-AGENT_SEPARATION_PX * 2, 0], [0, -AGENT_SEPARATION_PX * 2],
+  [AGENT_SEPARATION_PX * 2, AGENT_SEPARATION_PX], [AGENT_SEPARATION_PX, AGENT_SEPARATION_PX * 2],
+  [-AGENT_SEPARATION_PX, AGENT_SEPARATION_PX * 2], [-AGENT_SEPARATION_PX * 2, AGENT_SEPARATION_PX],
+  [-AGENT_SEPARATION_PX * 2, -AGENT_SEPARATION_PX], [-AGENT_SEPARATION_PX, -AGENT_SEPARATION_PX * 2],
+  [AGENT_SEPARATION_PX, -AGENT_SEPARATION_PX * 2], [AGENT_SEPARATION_PX * 2, -AGENT_SEPARATION_PX],
+] as const
+
+/**
+ * Find a non-overlapping pixel position near the target.
+ * Checks against all other agent positions (excluding the moving agent).
+ * Returns the nearest slot that doesn't overlap any existing agent.
+ */
+function findNonOverlappingPixelPos(
+  targetX: number,
+  targetY: number,
+  excludeAgentId: string,
+): { x: number; y: number } {
+  for (const [dx, dy] of PIXEL_SPIRAL_OFFSETS) {
+    const testX = targetX + dx
+    const testY = targetY + dy
+    let collision = false
+    for (const [id, pos] of agentPositions) {
+      if (id === excludeAgentId) continue
+      const distX = Math.abs(pos.x - testX)
+      const distY = Math.abs(pos.y - testY)
+      if (distX < AGENT_SEPARATION_PX && distY < AGENT_SEPARATION_PX) {
+        collision = true
+        break
+      }
+    }
+    if (!collision) {
+      return { x: testX, y: testY }
+    }
+  }
+  // All spiral slots occupied — fall back to target (extremely rare)
+  return { x: targetX, y: targetY }
+}
+
+/**
+ * Resolve the target pixel position for a work event.
+ * Uses building position + optional tile-local offset.
+ */
+function resolveWorkTargetPixel(event: AgentEvent): { x: number; y: number } | null {
   const buildingId = event.target?.building_id
-  if (!buildingId) return
+  if (!buildingId) return null
 
   const bpos = buildingPositions.get(buildingId)
-  if (!bpos) return
+  if (!bpos) return null
 
-  // Use tile-local offset when available so the agent walks to the exact file tile
   const local = (event.metadata as { local?: { x: number; y: number } })?.local
   const TILE = 32
   const px = local
@@ -260,12 +304,26 @@ function emitAgentMoveForWorkEvent(event: AgentEvent): void {
     ? bpos.y + local.y * TILE + TILE / 2
     : bpos.y
 
-  agentPositions.set(event.agent_id, { x: px, y: py })
+  return { x: px, y: py }
+}
+
+/**
+ * Auto-move the agent to the building/tile targeted by a work event.
+ * Uses collision-aware placement to prevent overlapping other agents.
+ * Mirrors store-side autoMoveAgentToWorkTarget().
+ */
+function emitAgentMoveForWorkEvent(event: AgentEvent): void {
+  const target = resolveWorkTargetPixel(event)
+  if (!target) return
+
+  const pos = findNonOverlappingPixelPos(target.x, target.y, event.agent_id)
+
+  agentPositions.set(event.agent_id, pos)
   coalescer.add({
     type: 'agent_move',
     id: event.agent_id,
-    x: px,
-    y: py,
+    x: pos.x,
+    y: pos.y,
   })
 }
 
@@ -462,7 +520,9 @@ ctx.onmessage = (ev: MessageEvent) => {
         }
         if (msg.agents) {
           for (const a of msg.agents) {
-            agentPositions.set(a.id, { x: a.x, y: a.y })
+            // Use collision-aware placement so initial positions don't stack
+            const pos = findNonOverlappingPixelPos(a.x, a.y, a.id)
+            agentPositions.set(a.id, pos)
           }
         }
         // Initialize baseline tile tracking from snapshot
