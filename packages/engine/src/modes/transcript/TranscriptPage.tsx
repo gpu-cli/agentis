@@ -6,12 +6,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { GameCanvas } from '../../components/GameCanvas'
-import { AgentPanel } from '../../components/AgentPanel'
-import { BuildingPanel } from '../../components/BuildingPanel'
-import { DistrictPanel } from '../../components/DistrictPanel'
-import { MonsterPanel } from '../../components/MonsterPanel'
-import { FollowBadge } from '../../components/FollowBadge'
-import { EventLog } from '../../components/EventLog'
+import { WorldOverlays } from '../../components/WorldOverlays'
 import { useUIStore } from '../../stores/uiStore'
 import {
   Button,
@@ -226,12 +221,7 @@ export function TranscriptPage({ isLocalEnabled, localInstallUrl }: TranscriptPa
       {/* Main canvas area */}
       <main className="flex-1 min-h-0 relative overflow-hidden">
         <GameCanvas onRendererReady={(r) => { rendererRef.current = r; engine.setRenderer(r) }} />
-        <EventLog />
-        <FollowBadge />
-        <AgentPanel />
-        <BuildingPanel />
-        <DistrictPanel />
-        <MonsterPanel />
+        <WorldOverlays />
 
         <TranscriptHud show={showHud} rendererRef={rendererRef} />
       </main>

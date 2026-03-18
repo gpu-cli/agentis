@@ -5,12 +5,7 @@
 // ============================================================================
 
 import { GameCanvas } from '../../components/GameCanvas'
-import { AgentPanel } from '../../components/AgentPanel'
-import { BuildingPanel } from '../../components/BuildingPanel'
-import { DistrictPanel } from '../../components/DistrictPanel'
-import { MonsterPanel } from '../../components/MonsterPanel'
-import { FollowBadge } from '../../components/FollowBadge'
-import { EventLog } from '../../components/EventLog'
+import { WorldOverlays } from '../../components/WorldOverlays'
 import { useUIStore } from '../../stores/uiStore'
 import { useModeStore } from '../../app/modeStore'
 import {
@@ -119,12 +114,7 @@ export function DemoPage() {
       {/* Main canvas area */}
       <main className="flex-1 min-h-0 relative overflow-hidden">
         <GameCanvas />
-        <EventLog />
-        <FollowBadge />
-        <AgentPanel />
-        <BuildingPanel />
-        <DistrictPanel />
-        <MonsterPanel />
+        <WorldOverlays />
       </main>
       </div>
     </TooltipProvider>

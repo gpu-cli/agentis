@@ -9,7 +9,6 @@ import { useUniverseStore } from '../stores/universeStore'
 import { DEFAULT_TOOLS } from '@multiverse/shared'
 import { SpriteIcon, resolveToolIcon } from './SpriteIcon'
 import { ResizableSidePanel } from './ResizableSidePanel'
-import { AgentChatPanel } from './AgentChatPanel'
 import { AgentTypeLogo, AGENT_TYPE_META } from './AgentTypeLogo'
 import { Button, ScrollArea } from '@multiverse/ui'
 
@@ -123,35 +122,24 @@ export function AgentPanel() {
   const clearSelection = useUIStore((s) => s.clearSelection)
   const setFollowAgent = useUIStore((s) => s.setFollowAgent)
   const followAgentId = useUIStore((s) => s.followAgentId)
-  const setConversationAgent = useUIStore((s) => s.setConversationAgent)
-  const conversationAgentId = useUIStore((s) => s.conversationAgentId)
   const agents = useAgentStore((s) => s.agents)
   const islands = useUniverseStore((s) => s.islands)
   const districts = useUniverseStore((s) => s.districts)
   const buildings = useUniverseStore((s) => s.buildings)
-  const spriteAssignment = useAgentStore((s) => s.spriteAssignment)
   const getAgentEvents = useEventStore((s) => s.getAgentEvents)
 
-  if (selectedType !== 'agent' || !selectedId) return null
+  const agent = selectedType === 'agent' && selectedId ? agents.get(selectedId) : null
 
-  const agent = agents.get(selectedId)
   if (!agent) return null
 
   const recentEvents = getAgentEvents(agent.id, 50)
   const isFollowing = followAgentId === agent.id
-  const isTalking = conversationAgentId === agent.id
   const typeMeta = AGENT_TYPE_META[agent.type]
   const location = resolveLocation(agent.id, agents, islands, districts, buildings)
 
   return (
     <ResizableSidePanel>
-      {/* When chatting, show only the embedded chat — fills the entire sidebar */}
-      {isTalking ? (
-        <div className="flex-1 min-h-0 flex flex-col">
-          <AgentChatPanel agentId={agent.id} />
-        </div>
-      ) : (
-        <div className="p-4 flex flex-col">
+      <div className="p-4 flex flex-col">
           {/* Header — name + status orb + type logo + close */}
           <div className="flex items-center gap-2 mb-5">
             <h2 className="font-pixel text-sm text-green-400 flex-1 min-w-0 truncate">
@@ -192,7 +180,7 @@ export function AgentPanel() {
             </div>
           )}
 
-          {/* Key Actions — Follow + Talk side by side */}
+          {/* Key Actions */}
           <div className="flex gap-2 mb-4">
             <Button
               variant="ghost"
@@ -211,16 +199,6 @@ export function AgentPanel() {
             >
               <SpriteIcon region="chains" size={18} className="shrink-0" />
               <span className="font-pixel leading-none">{isFollowing ? 'Following' : 'Follow'}</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setConversationAgent(agent.id)}
-              className="h-auto flex-1 gap-1.5 bg-muted px-3 py-2 text-xs font-medium text-card-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-blue-500"
-              aria-label="Chat with agent"
-            >
-              <SpriteIcon region={spriteAssignment.get(agent.id) ?? 'hero_knight'} size={18} className="shrink-0" />
-              <span className="font-pixel leading-none">Chat</span>
             </Button>
           </div>
 
@@ -310,8 +288,7 @@ export function AgentPanel() {
               })}
             </div>
           </ScrollArea>
-        </div>
-      )}
+      </div>
     </ResizableSidePanel>
   )
 }

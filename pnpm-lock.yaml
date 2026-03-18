@@ -152,8 +152,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-  packages/local-runner: {}
-
   packages/shared:
     devDependencies:
       typescript:
